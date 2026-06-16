@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" hidden aria-hidden="true">
+    <symbol id="icon-menu" viewBox="0 0 20 14">
+        <rect width="20" height="1.5" fill="#111111"/>
+        <rect y="6" width="14" height="1.5" fill="#111111"/>
+        <rect y="12" width="20" height="1.5" fill="#111111"/>
+    </symbol>
+
+    <symbol id="icon-profile" viewBox="0 0 20 22">
+        <circle cx="10" cy="6" r="5" stroke="#111111" stroke-width="1.5" fill="none"/>
+        <path d="M1 21C1 17.134 5.02944 14 10 14C14.9706 14 19 17.134 19 21" stroke="#111111" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+    </symbol>
+
+    <symbol id="icon-cart" viewBox="0 0 20 22">
+        <path d="M1 1H4L6 14H16L18.5 5H5" stroke="#111111" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <circle cx="8" cy="18" r="1.5" fill="#111111"/>
+        <circle cx="14" cy="18" r="1.5" fill="#111111"/>
+    </symbol>
+
+    <symbol id="icon-close" viewBox="0 0 16 16">
+        <path d="M1 1L15 15M15 1L1 15" stroke="#111111" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+</svg>
