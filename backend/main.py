@@ -1,15 +1,13 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse
 
-app = FastAPI(title="Profile Page")
+from backend.routers import pages
 
-# Монтируем статические файлы под путём /profile
-app.mount("/profile",
-          StaticFiles(directory="static", html=True),
-          name="profile")
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
-# Автоматическое перенаправение с / на /profile
-@app.get("/")
-async def root():
-    return RedirectResponse(url="/profile", status_code=302)
+app = FastAPI(title="Lobotomy")
+
+app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR / "static")), name="static")
+app.include_router(pages.router)

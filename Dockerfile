@@ -8,10 +8,11 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Копируем весь код из папки backend
-COPY backend/ .
+COPY backend/ ./backend/
+COPY frontend/ ./frontend/
 
 # Открываем порт
 EXPOSE 8000
 
 # Запуск
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
