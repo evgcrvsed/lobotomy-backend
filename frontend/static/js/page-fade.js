@@ -1,11 +1,10 @@
 (function () {
-    /* -------------------------------------------------------
-       PAGE TRANSITIONS
-       fade in/out only .page-content — header is untouched
-    ------------------------------------------------------- */
     const content = document.querySelector('.page-content');
+    const header  = document.querySelector('.header');
 
-    window.addEventListener('DOMContentLoaded', function () {
+    window.addEventListener('pageshow', function () {
+        content.classList.remove('page-exit');
+        header.classList.remove('header--exit');
         requestAnimationFrame(function () {
             content.classList.add('page-visible');
         });
@@ -17,7 +16,6 @@
 
         const href = link.getAttribute('href');
 
-        // Skip: anchors, external links, special protocols, new tabs
         if (
             !href ||
             href.startsWith('#') ||
@@ -31,8 +29,8 @@
 
         content.classList.remove('page-visible');
         content.classList.add('page-exit');
+        header.classList.add('header--exit');
 
-        // Wait for fade-out to finish, then navigate
         setTimeout(function () {
             window.location.href = href;
         }, 260);

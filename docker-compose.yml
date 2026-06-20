@@ -1,13 +1,29 @@
-version: '3.9'
-
 services:
-  fastapi:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: fastapi-backend
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: lobotomy
     ports:
-      - "8001:8000"
-    restart: unless-stopped
-    # volumes:                  # Раскомментируйте для разработки
-    #   - ./backend:/backend
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/lobotomy
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

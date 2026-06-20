@@ -3,13 +3,11 @@ FROM python:3.12-slim
 # Рабочая директория внутри контейнера
 WORKDIR /app
 
-# Копируем requirements и устанавливаем зависимости
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Копируем весь код из папки backend
+# Копируем всё необходимое
 COPY backend/ ./backend/
 COPY frontend/ ./frontend/
+COPY requirements.txt .
+RUN pip install -r requirements.txt
 
 # Открываем порт
 EXPOSE 8000

@@ -1,10 +1,9 @@
-from pathlib import Path
-
 from fastapi import APIRouter, Request
 from fastapi.templating import Jinja2Templates
 
-FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
-templates = Jinja2Templates(directory=str(FRONTEND_DIR / "templates"))
+from backend.config import settings
+
+templates = Jinja2Templates(directory=str(settings.templates_dir))
 
 router = APIRouter()
 
@@ -17,3 +16,8 @@ async def index(request: Request):
 @router.get("/profile")
 async def profile(request: Request):
     return templates.TemplateResponse(request, "pages/profile.html")
+
+
+@router.get("/admin")
+async def admin(request: Request):
+    return templates.TemplateResponse(request, "pages/admin.html")
