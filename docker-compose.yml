@@ -6,7 +6,8 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: lobotomy
     ports:
-      - "5432:5432"
+      # Только локальный доступ — чтобы на сервере Postgres не торчал наружу
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -18,12 +19,22 @@ services:
   app:
     build: .
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/lobotomy
     depends_on:
       db:
         condition: service_healthy
+
+  web:
+    # Путь до репозитория фронтенда (клонировать рядом с этим репозиторием).
+    # Локально можно переопределить в .env: FRONTEND_DIR=<путь>
+    build:
+      context: ${FRONTEND_DIR:-../lobotomy-frontend}
+    ports:
+      - "80:80"
+    depends_on:
+      - app
 
 volumes:
   postgres_data:
