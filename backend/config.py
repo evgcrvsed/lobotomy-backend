@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/lobotomy"
 
     # Paths
-    frontend_dir: Path = ROOT_DIR / "frontend"
+    static_dir: Path = ROOT_DIR / "static"
 
     @field_validator("port")
     @classmethod
@@ -35,20 +35,12 @@ class Settings(BaseSettings):
             raise ValueError(f"port must be between 1 and 65535, got {v}")
         return v
 
-    @field_validator("frontend_dir")
+    @field_validator("static_dir")
     @classmethod
-    def frontend_dir_must_exist(cls, v: Path) -> Path:
+    def static_dir_must_exist(cls, v: Path) -> Path:
         if not v.exists():
-            raise ValueError(f"frontend_dir does not exist: {v}")
+            raise ValueError(f"static_dir does not exist: {v}")
         return v
-
-    @property
-    def templates_dir(self) -> Path:
-        return self.frontend_dir / "templates"
-
-    @property
-    def static_dir(self) -> Path:
-        return self.frontend_dir / "static"
 
 
 settings = Settings()

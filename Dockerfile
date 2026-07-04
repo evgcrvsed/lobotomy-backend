@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Копируем всё необходимое
 COPY backend/ ./backend/
-COPY frontend/ ./frontend/
+COPY static/ ./static/
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 

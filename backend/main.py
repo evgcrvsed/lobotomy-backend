@@ -1,13 +1,14 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 
 from backend.config import settings
 from backend.database import AsyncSessionLocal, engine
 from backend.models import Base, Collection
-from backend.routers import collections, pages, products
+from backend.routers import collections, products
 
 
 async def _seed_collections() -> None:
@@ -35,7 +36,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="static")
-app.include_router(pages.router)
 app.include_router(products.router)
 app.include_router(collections.router)
