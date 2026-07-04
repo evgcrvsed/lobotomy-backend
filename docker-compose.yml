@@ -1,3 +1,6 @@
+# Фиксируем имя проекта, чтобы оно не зависело от папки, из которой запущен compose
+name: lobotomy
+
 services:
   db:
     image: postgres:16-alpine
