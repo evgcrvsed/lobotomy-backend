@@ -3,6 +3,7 @@ name: lobotomy
 
 services:
   db:
+    container_name: lobotomy-db
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: postgres
@@ -19,7 +20,8 @@ services:
       timeout: 3s
       retries: 15
 
-  app:
+  backend:
+    container_name: lobotomy-backend
     build: .
     ports:
       - "127.0.0.1:8000:8000"
@@ -29,7 +31,8 @@ services:
       db:
         condition: service_healthy
 
-  web:
+  frontend:
+    container_name: lobotomy-frontend
     # Путь до репозитория фронтенда (клонировать рядом с этим репозиторием).
     # Локально можно переопределить в .env: FRONTEND_DIR=<путь>
     build:
@@ -37,7 +40,7 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - app
+      - backend
 
 volumes:
   postgres_data:
