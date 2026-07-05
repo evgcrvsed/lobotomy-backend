@@ -48,6 +48,7 @@ class ProductService:
             self.db.add(ProductImage(
                 product_id=product.id,
                 filename=img.filename,
+                role=img.role,
                 sort_order=img.sort_order,
             ))
 
@@ -78,6 +79,7 @@ class ProductService:
             self.db.add(ProductImage(
                 product_id=product.id,
                 filename=img_data.filename,
+                role=img_data.role,
                 sort_order=img_data.sort_order,
             ))
 

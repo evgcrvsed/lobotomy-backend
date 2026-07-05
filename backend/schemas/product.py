@@ -1,14 +1,20 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
+
+ImageRole = Literal["main", "hover", "gallery"]
 
 
 class ProductImageCreate(BaseModel):
     filename: str = Field(..., min_length=1, max_length=255)
+    role: ImageRole = "gallery"
     sort_order: int = Field(default=0, ge=0)
 
 
 class ProductImageResponse(BaseModel):
     id: int
     filename: str
+    role: ImageRole
     sort_order: int
 
     model_config = {"from_attributes": True}

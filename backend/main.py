@@ -8,7 +8,7 @@ from sqlalchemy import select
 from backend.config import settings
 from backend.database import AsyncSessionLocal, engine
 from backend.models import Base, Collection
-from backend.routers import collections, products
+from backend.routers import collections, products, uploads
 
 
 async def _seed_collections() -> None:
@@ -46,3 +46,4 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="static")
 app.include_router(products.router)
 app.include_router(collections.router)
+app.include_router(uploads.router)
