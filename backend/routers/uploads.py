@@ -9,13 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.config import settings
 from backend.database import get_db
 from backend.models import Product, ProductImage
+from backend.services.image_service import compress_image
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
-MAX_SIZE = 10 * 1024 * 1024  # 10 МБ
+# Входной файл может быть большим — после сжатия на диск ляжет в разы меньше
+MAX_SIZE = 20 * 1024 * 1024  # 20 МБ
 
 
 def _images_dir() -> Path:
@@ -35,14 +37,22 @@ async def upload_image(file: UploadFile):
     if len(content) > MAX_SIZE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Файл слишком большой (максимум 10 МБ)",
+            detail="Файл слишком большой (максимум 20 МБ)",
+        )
+
+    try:
+        compressed = compress_image(content)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Файл повреждён или не является изображением",
         )
 
     # uuid вместо исходного имени: исключает коллизии и небезопасные символы
-    filename = f"{uuid.uuid4().hex}{ext}"
+    filename = f"{uuid.uuid4().hex}.webp"
     dest = _images_dir() / filename
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(content)
+    dest.write_bytes(compressed)
 
     return {"filename": filename}
 

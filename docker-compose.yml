@@ -30,6 +30,8 @@ services:
     volumes:
       # Загруженные через админку фото должны переживать пересборку контейнера
       - static_images:/app/static/images
+      # Оригиналы, отложенные скриптом сжатия
+      - static_originals:/app/static/originals
     depends_on:
       db:
         condition: service_healthy
@@ -48,3 +50,4 @@ services:
 volumes:
   postgres_data:
   static_images:
+  static_originals:
