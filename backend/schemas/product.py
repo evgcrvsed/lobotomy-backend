@@ -20,6 +20,25 @@ class ProductImageResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ProductSizeCreate(BaseModel):
+    label: str = Field(..., min_length=1, max_length=10)
+    length: int | None = Field(default=None, ge=1, description="см")
+    shoulder: int | None = Field(default=None, ge=1, description="см")
+    chest: int | None = Field(default=None, ge=1, description="см")
+    sleeve: int | None = Field(default=None, ge=1, description="см")
+
+
+class ProductSizeResponse(BaseModel):
+    id: int
+    label: str
+    length: int | None
+    shoulder: int | None
+    chest: int | None
+    sleeve: int | None
+
+    model_config = {"from_attributes": True}
+
+
 class ProductCreate(BaseModel):
     collection_id: int = Field(..., gt=0)
     name: str = Field(..., min_length=1, max_length=200)
@@ -28,6 +47,7 @@ class ProductCreate(BaseModel):
     density: int | None = Field(default=None, gt=0, description="г/м²")
     price: int = Field(..., gt=0)
     images: list[ProductImageCreate] = Field(default_factory=list)
+    sizes: list[ProductSizeCreate] = Field(default_factory=list)
 
 
 class ProductResponse(BaseModel):
@@ -39,5 +59,6 @@ class ProductResponse(BaseModel):
     density: int | None
     price: int
     images: list[ProductImageResponse]
+    sizes: list[ProductSizeResponse]
 
     model_config = {"from_attributes": True}

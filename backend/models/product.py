@@ -21,3 +21,6 @@ class Product(Base):
     images: Mapped[list["ProductImage"]] = relationship(
         back_populates="product", cascade="all, delete-orphan", order_by="ProductImage.sort_order"
     )
+    sizes: Mapped[list["ProductSize"]] = relationship(
+        back_populates="product", cascade="all, delete-orphan", order_by="ProductSize.sort_order"
+    )

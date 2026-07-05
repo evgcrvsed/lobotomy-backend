@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.config import settings
-from backend.models import Collection, Product, ProductImage
+from backend.models import Collection, Product, ProductImage, ProductSize
 from backend.schemas.product import ProductCreate
 
 
@@ -17,7 +17,9 @@ class ProductService:
 
     async def list_all(self) -> list[Product]:
         result = await self.db.execute(
-            select(Product).options(selectinload(Product.images)).order_by(Product.id)
+            select(Product)
+            .options(selectinload(Product.images), selectinload(Product.sizes))
+            .order_by(Product.id)
         )
         return list(result.scalars().all())
 
@@ -25,9 +27,21 @@ class ProductService:
         result = await self.db.execute(
             select(Product)
             .where(Product.id == product_id)
-            .options(selectinload(Product.images))
+            .options(selectinload(Product.images), selectinload(Product.sizes))
         )
         return result.scalar_one_or_none()
+
+    def _add_sizes(self, product_id: int, data: ProductCreate) -> None:
+        for i, size in enumerate(data.sizes):
+            self.db.add(ProductSize(
+                product_id=product_id,
+                label=size.label,
+                length=size.length,
+                shoulder=size.shoulder,
+                chest=size.chest,
+                sleeve=size.sleeve,
+                sort_order=i + 1,
+            ))
 
     async def create(self, data: ProductCreate) -> Product:
         collection = await self.db.get(Collection, data.collection_id)
@@ -52,6 +66,7 @@ class ProductService:
                 role=img.role,
                 sort_order=img.sort_order,
             ))
+        self._add_sizes(product.id, data)
 
         await self.db.commit()
         return await self.get_by_id(product.id)
@@ -88,6 +103,8 @@ class ProductService:
 
         for img in list(product.images):
             await self.db.delete(img)
+        for size in list(product.sizes):
+            await self.db.delete(size)
         await self.db.flush()
 
         for img_data in data.images:
@@ -97,6 +114,7 @@ class ProductService:
                 role=img_data.role,
                 sort_order=img_data.sort_order,
             ))
+        self._add_sizes(product.id, data)
 
         await self.db.commit()
         await self._delete_unused_files(old_filenames)
