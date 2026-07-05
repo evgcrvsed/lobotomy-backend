@@ -2,6 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from backend.config import settings
 from backend.models import Collection, Product, ProductImage
 from backend.schemas.product import ProductCreate
 
@@ -55,6 +56,18 @@ class ProductService:
         await self.db.commit()
         return await self.get_by_id(product.id)
 
+    async def _delete_unused_files(self, filenames: list[str]) -> None:
+        """Удаляет с диска файлы, на которые больше не ссылается ни один товар."""
+        candidates = set(filenames)
+        if not candidates:
+            return
+        result = await self.db.execute(
+            select(ProductImage.filename).where(ProductImage.filename.in_(candidates))
+        )
+        still_used = set(result.scalars().all())
+        for name in candidates - still_used:
+            (settings.static_dir / "images" / name).unlink(missing_ok=True)
+
     async def update(self, product_id: int, data: ProductCreate) -> Product | None:
         product = await self.get_by_id(product_id)
         if product is None:
@@ -63,6 +76,8 @@ class ProductService:
         collection = await self.db.get(Collection, data.collection_id)
         if collection is None:
             raise CollectionNotFoundError(f"Collection id={data.collection_id} not found")
+
+        old_filenames = [img.filename for img in product.images]
 
         product.collection_id = data.collection_id
         product.name = data.name
@@ -84,12 +99,15 @@ class ProductService:
             ))
 
         await self.db.commit()
+        await self._delete_unused_files(old_filenames)
         return await self.get_by_id(product_id)
 
     async def delete(self, product_id: int) -> bool:
-        product = await self.db.get(Product, product_id)
+        product = await self.get_by_id(product_id)
         if product is None:
             return False
+        filenames = [img.filename for img in product.images]
         await self.db.delete(product)
         await self.db.commit()
+        await self._delete_unused_files(filenames)
         return True
