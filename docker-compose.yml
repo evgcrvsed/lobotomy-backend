@@ -5,6 +5,7 @@ services:
   db:
     container_name: lobotomy-db
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -23,6 +24,7 @@ services:
   backend:
     container_name: lobotomy-backend
     build: .
+    restart: unless-stopped
     ports:
       - "127.0.0.1:8000:8000"
     environment:
@@ -38,6 +40,7 @@ services:
 
   frontend:
     container_name: lobotomy-frontend
+    restart: unless-stopped
     # Путь до репозитория фронтенда (клонировать рядом с этим репозиторием).
     # Локально можно переопределить в .env: FRONTEND_DIR=<путь>
     build:
