@@ -1,24 +1,8 @@
-import re
-
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models import Collection, Product
-
-# Транслитерация для генерации slug из русских названий
-TRANSLIT = {
-    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e",
-    "ж": "zh", "з": "z", "и": "i", "й": "y", "к": "k", "л": "l", "м": "m",
-    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
-    "ф": "f", "х": "h", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "sch",
-    "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
-}
-
-
-def slugify(name: str) -> str:
-    s = "".join(TRANSLIT.get(ch, ch) for ch in name.lower())
-    s = re.sub(r"[^a-z0-9]+", "-", s).strip("-")
-    return s or "collection"
+from backend.services.slugs import slugify
 
 
 class CollectionNameTakenError(Exception):
@@ -68,7 +52,7 @@ class CollectionService:
         await self.db.refresh(collection)
         return collection
 
-    async def rename(self, collection_id: int, name: str) -> Collection | None:
+    async def update(self, collection_id: int, name: str, image: str | None) -> Collection | None:
         collection = await self.db.get(Collection, collection_id)
         if collection is None:
             return None
@@ -77,6 +61,7 @@ class CollectionService:
 
         collection.name = name
         collection.slug = await self._unique_slug(name, exclude_id=collection_id)
+        collection.image = image
         await self.db.commit()
         await self.db.refresh(collection)
         return collection

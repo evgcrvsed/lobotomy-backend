@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
-from backend.schemas.collection import CollectionCreate, CollectionResponse
+from backend.schemas.collection import CollectionCreate, CollectionResponse, CollectionUpdate
 from backend.services.collection_service import (
     CollectionNameTakenError,
     CollectionNotEmptyError,
@@ -30,9 +30,9 @@ async def create_collection(data: CollectionCreate, db: DbDep):
 
 
 @router.put("/{collection_id}", response_model=CollectionResponse)
-async def rename_collection(collection_id: int, data: CollectionCreate, db: DbDep):
+async def update_collection(collection_id: int, data: CollectionUpdate, db: DbDep):
     try:
-        collection = await CollectionService(db).rename(collection_id, data.name.strip())
+        collection = await CollectionService(db).update(collection_id, data.name.strip(), data.image)
     except CollectionNameTakenError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     if collection is None:

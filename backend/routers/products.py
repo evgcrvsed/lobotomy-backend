@@ -17,6 +17,15 @@ async def list_products(db: DbDep):
     return await ProductService(db).list_all()
 
 
+# важно: объявлен раньше "/{product_id}", иначе слово "slug" попытается стать числом
+@router.get("/slug/{slug}", response_model=ProductResponse)
+async def get_product_by_slug(slug: str, db: DbDep):
+    product = await ProductService(db).get_by_slug(slug)
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    return product
+
+
 @router.get("/{product_id}", response_model=ProductResponse)
 async def get_product(product_id: int, db: DbDep):
     product = await ProductService(db).get_by_id(product_id)

@@ -42,6 +42,7 @@ class ProductSizeResponse(BaseModel):
 class ProductCreate(BaseModel):
     collection_id: int = Field(..., gt=0)
     name: str = Field(..., min_length=1, max_length=200)
+    slug: str | None = Field(default=None, max_length=200)
     description: str | None = None
     material: str | None = Field(default=None, max_length=200)
     density: int | None = Field(default=None, gt=0, description="г/м²")
@@ -54,6 +55,7 @@ class ProductResponse(BaseModel):
     id: int
     collection_id: int
     name: str
+    slug: str | None
     description: str | None
     material: str | None
     density: int | None

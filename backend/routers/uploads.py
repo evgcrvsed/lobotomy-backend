@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
 from backend.database import get_db
-from backend.models import Product, ProductImage
+from backend.models import Collection, Product, ProductImage
 from backend.services.image_service import compress_image
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
@@ -68,6 +68,13 @@ async def list_images(db: DbDep):
         if product_name not in names:
             names.append(product_name)
 
+    col_result = await db.execute(select(Collection.name, Collection.image).where(Collection.image.is_not(None)))
+    for col_name, col_image in col_result.all():
+        names = usage.setdefault(col_image, [])
+        label = f"Коллекция {col_name}"
+        if label not in names:
+            names.append(label)
+
     images_dir = _images_dir()
     files = [p for p in images_dir.iterdir() if p.is_file()] if images_dir.is_dir() else []
     files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
@@ -90,6 +97,8 @@ async def delete_image(filename: str, db: DbDep):
         .where(ProductImage.filename == filename)
     )
     used_by = list(dict.fromkeys(result.scalars().all()))
+    col_result = await db.execute(select(Collection.name).where(Collection.image == filename))
+    used_by += [f"Коллекция {n}" for n in col_result.scalars().all()]
     if used_by:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

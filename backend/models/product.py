@@ -12,6 +12,8 @@ class Product(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     collection_id: Mapped[int] = mapped_column(ForeignKey("collections.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
+    # Читаемый адрес карточки (/product/<slug>); уникальность обеспечивает индекс из main.py
+    slug: Mapped[str | None] = mapped_column(String(200))
     description: Mapped[str | None] = mapped_column(Text)
     material: Mapped[str | None] = mapped_column(String(200))
     density: Mapped[int | None] = mapped_column()

@@ -5,6 +5,7 @@ from sqlalchemy.orm import selectinload
 from backend.config import settings
 from backend.models import Collection, Product, ProductImage, ProductSize
 from backend.schemas.product import ProductCreate
+from backend.services.slugs import slugify
 
 
 class CollectionNotFoundError(Exception):
@@ -31,6 +32,29 @@ class ProductService:
         )
         return result.scalar_one_or_none()
 
+    async def get_by_slug(self, slug: str) -> Product | None:
+        result = await self.db.execute(
+            select(Product)
+            .where(Product.slug == slug)
+            .options(selectinload(Product.images), selectinload(Product.sizes))
+        )
+        return result.scalar_one_or_none()
+
+    async def _unique_slug(self, data: ProductCreate, exclude_id: int | None = None) -> str:
+        """Slug из поля формы (или из названия), с суффиксом при совпадениях."""
+        base = slugify(data.slug or data.name)
+        slug = base
+        n = 2
+        while True:
+            query = select(Product.id).where(Product.slug == slug)
+            if exclude_id is not None:
+                query = query.where(Product.id != exclude_id)
+            result = await self.db.execute(query)
+            if result.first() is None:
+                return slug
+            slug = f"{base}-{n}"
+            n += 1
+
     def _add_sizes(self, product_id: int, data: ProductCreate) -> None:
         for i, size in enumerate(data.sizes):
             self.db.add(ProductSize(
@@ -51,6 +75,7 @@ class ProductService:
         product = Product(
             collection_id=data.collection_id,
             name=data.name,
+            slug=await self._unique_slug(data),
             description=data.description,
             material=data.material,
             density=data.density,
@@ -96,6 +121,7 @@ class ProductService:
 
         product.collection_id = data.collection_id
         product.name = data.name
+        product.slug = await self._unique_slug(data, exclude_id=product_id)
         product.description = data.description
         product.material = data.material
         product.density = data.density

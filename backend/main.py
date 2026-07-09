@@ -3,12 +3,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from backend.config import settings
 from backend.database import AsyncSessionLocal, engine
-from backend.models import Base, Collection
+from backend.models import Base, Collection, Product
 from backend.routers import collections, products, uploads
+from backend.services.slugs import slugify
 
 
 async def _seed_collections() -> None:
@@ -21,11 +22,38 @@ async def _seed_collections() -> None:
             await session.commit()
 
 
+async def _backfill_product_slugs() -> None:
+    """Генерирует адреса из названий для товаров, созданных до появления slug."""
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Product).where(Product.slug.is_(None)))
+        products_without_slug = list(result.scalars())
+        for product in products_without_slug:
+            base = slugify(product.name)
+            slug = base
+            n = 2
+            while True:
+                taken = await session.execute(
+                    select(Product.id).where(Product.slug == slug, Product.id != product.id)
+                )
+                if taken.first() is None:
+                    break
+                slug = f"{base}-{n}"
+                n += 1
+            product.slug = slug
+        if products_without_slug:
+            await session.commit()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # create_all не меняет уже существующие таблицы — добавляем колонки сами
+        await conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS slug VARCHAR(200)"))
+        await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_products_slug ON products (slug)"))
+        await conn.execute(text("ALTER TABLE collections ADD COLUMN IF NOT EXISTS image VARCHAR(255)"))
     await _seed_collections()
+    await _backfill_product_slugs()
     yield
 
 
