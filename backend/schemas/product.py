@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-ImageRole = Literal["main", "hover", "gallery"]
+ImageRole = Literal["main", "hover", "gallery", "sizechart"]
 
 
 class ProductImageCreate(BaseModel):
