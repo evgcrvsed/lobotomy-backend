@@ -8,7 +8,7 @@ from sqlalchemy import select, text
 from backend.config import settings
 from backend.database import AsyncSessionLocal, engine
 from backend.models import Base, Collection, Product
-from backend.routers import collections, products, uploads
+from backend.routers import auth, collections, products, uploads
 from backend.services.slugs import slugify
 
 
@@ -75,3 +75,4 @@ app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="stat
 app.include_router(products.router)
 app.include_router(collections.router)
 app.include_router(uploads.router)
+app.include_router(auth.router)

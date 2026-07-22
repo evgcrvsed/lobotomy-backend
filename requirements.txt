@@ -2,6 +2,8 @@ fastapi
 uvicorn[standard]
 python-multipart
 pillow
+pyjwt
+httpx
 sqlalchemy[asyncio]
 asyncpg
 pydantic-settings

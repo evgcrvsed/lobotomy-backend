@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/lobotomy"
 
+    # Auth
+    vk_client_id: str = ""  # ID приложения VK ID (id.vk.com); пусто — вход через VK выключен
+    jwt_secret: str = "dev-secret-change-me-to-long-random-string"  # на сервере задать своё через переменную окружения
+    jwt_ttl_days: int = 30
+
     # Paths
     static_dir: Path = ROOT_DIR / "static"
 

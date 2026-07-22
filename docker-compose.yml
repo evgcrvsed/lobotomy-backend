@@ -29,6 +29,9 @@ services:
       - "127.0.0.1:8000:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/lobotomy
+      # Авторизация: задаются в .env рядом с компоузом
+      VK_CLIENT_ID: ${VK_CLIENT_ID:-}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
     volumes:
       # Загруженные через админку фото должны переживать пересборку контейнера
       - static_images:/app/static/images
@@ -45,6 +48,9 @@ services:
     # Локально можно переопределить в .env: FRONTEND_DIR=<путь>
     build:
       context: ${FRONTEND_DIR:-../lobotomy-frontend}
+      args:
+        # ID приложения VK ID — вшивается во фронтенд при сборке
+        VITE_VK_APP_ID: ${VITE_VK_APP_ID:-}
     ports:
       - "80:80"
     depends_on:
