@@ -4,6 +4,7 @@ python-multipart
 pillow
 pyjwt
 httpx
+email-validator
 sqlalchemy[asyncio]
 asyncpg
 pydantic-settings

@@ -9,9 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.config import settings
 from backend.database import get_db
 from backend.models import Collection, Product, ProductImage
+from backend.services.auth_service import get_current_admin
 from backend.services.image_service import compress_image
 
-router = APIRouter(prefix="/api/uploads", tags=["uploads"])
+# весь роутер загрузок — только для админов (публичного доступа тут нет)
+router = APIRouter(prefix="/api/uploads", tags=["uploads"], dependencies=[Depends(get_current_admin)])
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 

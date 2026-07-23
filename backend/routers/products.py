@@ -5,11 +5,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
 from backend.schemas.product import ProductCreate, ProductResponse
+from backend.services.auth_service import get_current_admin
 from backend.services.product_service import CollectionNotFoundError, ProductService
 
 router = APIRouter(prefix="/api/products", tags=["products"])
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
+# Навешивается на изменяющие эндпоинты — пускает только админов
+admin_only = [Depends(get_current_admin)]
 
 
 @router.get("/", response_model=list[ProductResponse])
@@ -34,7 +37,7 @@ async def get_product(product_id: int, db: DbDep):
     return product
 
 
-@router.post("/", response_model=ProductResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=ProductResponse, status_code=status.HTTP_201_CREATED, dependencies=admin_only)
 async def create_product(data: ProductCreate, db: DbDep):
     try:
         return await ProductService(db).create(data)
@@ -42,7 +45,7 @@ async def create_product(data: ProductCreate, db: DbDep):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.put("/{product_id}", response_model=ProductResponse)
+@router.put("/{product_id}", response_model=ProductResponse, dependencies=admin_only)
 async def update_product(product_id: int, data: ProductCreate, db: DbDep):
     try:
         product = await ProductService(db).update(product_id, data)
@@ -53,7 +56,7 @@ async def update_product(product_id: int, data: ProductCreate, db: DbDep):
     return product
 
 
-@router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=admin_only)
 async def delete_product(product_id: int, db: DbDep):
     deleted = await ProductService(db).delete(product_id)
     if not deleted:

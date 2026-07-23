@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
 from backend.schemas.collection import CollectionCreate, CollectionResponse, CollectionUpdate
+from backend.services.auth_service import get_current_admin
 from backend.services.collection_service import (
     CollectionNameTakenError,
     CollectionNotEmptyError,
@@ -14,6 +15,7 @@ from backend.services.collection_service import (
 router = APIRouter(prefix="/api/collections", tags=["collections"])
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
+admin_only = [Depends(get_current_admin)]
 
 
 @router.get("/", response_model=list[CollectionResponse])
@@ -21,7 +23,7 @@ async def list_collections(db: DbDep):
     return await CollectionService(db).list_all()
 
 
-@router.post("/", response_model=CollectionResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=CollectionResponse, status_code=status.HTTP_201_CREATED, dependencies=admin_only)
 async def create_collection(data: CollectionCreate, db: DbDep):
     try:
         return await CollectionService(db).create(data.name.strip())
@@ -29,7 +31,7 @@ async def create_collection(data: CollectionCreate, db: DbDep):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
 
 
-@router.put("/{collection_id}", response_model=CollectionResponse)
+@router.put("/{collection_id}", response_model=CollectionResponse, dependencies=admin_only)
 async def update_collection(collection_id: int, data: CollectionUpdate, db: DbDep):
     try:
         collection = await CollectionService(db).update(collection_id, data.name.strip(), data.image)
@@ -40,7 +42,7 @@ async def update_collection(collection_id: int, data: CollectionUpdate, db: DbDe
     return collection
 
 
-@router.delete("/{collection_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{collection_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=admin_only)
 async def delete_collection(collection_id: int, db: DbDep):
     try:
         deleted = await CollectionService(db).delete(collection_id)

@@ -32,6 +32,9 @@ services:
       # Авторизация: задаются в .env рядом с компоузом
       VK_CLIENT_ID: ${VK_CLIENT_ID:-}
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      # Вход по коду на почту (Resend)
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-onboarding@resend.dev}
     volumes:
       # Загруженные через админку фото должны переживать пересборку контейнера
       - static_images:/app/static/images

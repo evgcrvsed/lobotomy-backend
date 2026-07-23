@@ -1,9 +1,10 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 
 class UserResponse(BaseModel):
     id: int
     auth_provider: str
+    is_admin: bool
     full_name: str | None
     email: str | None
     address: str | None
@@ -23,6 +24,15 @@ class UserUpdate(BaseModel):
 
 class VkLoginRequest(BaseModel):
     access_token: str = Field(..., min_length=1)
+
+
+class EmailCodeRequest(BaseModel):
+    email: EmailStr
+
+
+class EmailCodeVerify(BaseModel):
+    email: EmailStr
+    code: str = Field(..., min_length=4, max_length=8)
 
 
 class AuthResponse(BaseModel):
