@@ -45,7 +45,7 @@ def hash_login_code(email: str, code: str) -> str:
 
 async def send_login_code_email(email: str, code: str) -> None:
     if not settings.resend_api_key:
-        raise EmailNotConfiguredError("Отправка почты не настроена (не задан RESEND_API_KEY)")
+        raise EmailNotConfiguredError("Разраб даун забыл задать RESEND_API_URL пиздец работничек")
 
     html = (
         "<div style=\"font-family:sans-serif;font-size:15px;color:#111\">"

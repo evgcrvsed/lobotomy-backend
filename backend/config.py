@@ -32,7 +32,7 @@ class Settings(BaseSettings):
 
     # Email (Resend) — вход по одноразовому коду на почту
     resend_api_key: str = ""  # пусто — отправка почты выключена
-    email_from: str = "onboarding@resend.dev"  # адрес отправителя; для реальных писем нужен свой домен
+    email_from: str = "noreply@lobo1omy.store"  # адрес отправителя; для реальных писем нужен свой домен
     email_code_ttl_minutes: int = 15  # срок жизни кода; 0 — код не протухает (небезопасно)
     email_code_resend_seconds: int = 30  # не чаще одного запроса кода на почту за это время
 
