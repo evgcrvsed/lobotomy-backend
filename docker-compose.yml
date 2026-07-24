@@ -55,15 +55,37 @@ services:
         # ID приложения VK ID — вшивается во фронтенд при сборке
         VITE_VK_APP_ID: ${VITE_VK_APP_ID:-}
     environment:
-      # Кому разрешён доступ к сайту. Пусто/не задано — открыт всем.
-      # На сервере в .env: ALLOWED_IP=ваш.статический.ip
-      ALLOWED_IP: ${ALLOWED_IP:-0.0.0.0/0}
-    ports:
-      - "80:80"
+      # За Caddy этот nginx видит лишь внутренний адрес прокси, поэтому
+      # ограничение по IP теперь на Caddy. Тут всегда открыто для внутренней сети.
+      ALLOWED_IP: "0.0.0.0/0"
+    expose:
+      - "80"
     depends_on:
       - backend
+
+  caddy:
+    container_name: lobotomy-caddy
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    environment:
+      # Домен для HTTPS (в .env: SITE_DOMAIN=lobo1omy.store). Не задан — работает по HTTP на :80.
+      SITE_DOMAIN: ${SITE_DOMAIN:-:80}
+      # Ограничение по IP (реальный адрес клиента виден на входе). Пусто в .env — открыто всем.
+      ALLOWED_IP: ${ALLOWED_IP:-0.0.0.0/0 ::/0}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data     # сюда Caddy кладёт сертификаты — переживают пересоздание
+      - caddy_config:/config
+    depends_on:
+      - frontend
 
 volumes:
   postgres_data:
   static_images:
   static_originals:
+  caddy_data:
+  caddy_config:
