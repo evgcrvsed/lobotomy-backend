@@ -54,6 +54,10 @@ services:
       args:
         # ID приложения VK ID — вшивается во фронтенд при сборке
         VITE_VK_APP_ID: ${VITE_VK_APP_ID:-}
+    environment:
+      # Кому разрешён доступ к сайту. Пусто/не задано — открыт всем.
+      # На сервере в .env: ALLOWED_IP=ваш.статический.ip
+      ALLOWED_IP: ${ALLOWED_IP:-0.0.0.0/0}
     ports:
       - "80:80"
     depends_on:
