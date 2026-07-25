@@ -28,6 +28,7 @@ from backend.services.auth_service import (
     hash_login_code,
     send_login_code_email,
 )
+from backend.services.order_service import OrderService
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -106,6 +107,7 @@ async def verify_email_code(data: EmailCodeVerify, db: DbDep):
     await db.commit()
     await db.refresh(user)
 
+    await OrderService(db).claim_guest_orders(user)  # прилипают гостевые заказы с этой почтой
     return {"token": create_token(user.id), "user": user}
 
 
@@ -138,6 +140,7 @@ async def vk_login(data: VkLoginRequest, db: DbDep):
         await db.commit()
         await db.refresh(user)
 
+    await OrderService(db).claim_guest_orders(user)
     return {"token": create_token(user.id), "user": user}
 
 

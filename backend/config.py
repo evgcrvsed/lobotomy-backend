@@ -36,6 +36,16 @@ class Settings(BaseSettings):
     email_code_ttl_minutes: int = 15  # срок жизни кода; 0 — код не протухает (небезопасно)
     email_code_resend_seconds: int = 30  # не чаще одного запроса кода на почту за это время
 
+    # Оплата (Т-Банк / Tinkoff)
+    tinkoff_terminal_key: str = ""  # пусто — оплата выключена
+    tinkoff_password: str = ""
+    tinkoff_api_url: str = "https://securepay.tinkoff.ru/v2"
+    tinkoff_send_receipt: bool = False  # слать фискальный чек (включить на боевом терминале с фискализацией)
+    site_url: str = "https://lobo1omy.store"  # база для webhook/success/fail и писем
+
+    # Доставка (цены в рублях; сумму всегда считаем на сервере)
+    delivery_prices: dict[str, int] = {"cdek": 450, "post": 350, "cis": 750}
+
     # Paths
     static_dir: Path = ROOT_DIR / "static"
 

@@ -96,6 +96,21 @@ async def get_current_admin(user: Annotated[User, Depends(get_current_user)]) ->
     return user
 
 
+async def get_optional_user(
+    creds: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> User | None:
+    """Как get_current_user, но без токена/при плохом токене возвращает None, а не 401.
+    Нужно для гостевого оформления: авторизация желательна, но не обязательна."""
+    if creds is None:
+        return None
+    try:
+        payload = jwt.decode(creds.credentials, settings.jwt_secret, algorithms=["HS256"])
+        return await db.get(User, int(payload["sub"]))
+    except (jwt.PyJWTError, KeyError, ValueError):
+        return None
+
+
 async def fetch_vk_user(access_token: str) -> dict:
     """Проверяет VK-токен и возвращает данные пользователя от VK ID."""
     async with httpx.AsyncClient(timeout=10) as client:

@@ -8,7 +8,7 @@ from sqlalchemy import select, text
 from backend.config import settings
 from backend.database import AsyncSessionLocal, engine
 from backend.models import Base, Product
-from backend.routers import auth, collections, products, uploads
+from backend.routers import auth, collections, payments, products, uploads
 from backend.services.slugs import slugify
 
 
@@ -68,3 +68,4 @@ app.include_router(products.router)
 app.include_router(collections.router)
 app.include_router(uploads.router)
 app.include_router(auth.router)
+app.include_router(payments.router)
