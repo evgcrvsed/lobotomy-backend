@@ -45,6 +45,8 @@ class Settings(BaseSettings):
 
     # Доставка (цены в рублях; сумму всегда считаем на сервере)
     delivery_prices: dict[str, int] = {"cdek": 450, "post": 350, "cis": 750}
+    # Через сколько минут неоплаченный заказ считается брошенным и отменяется
+    pending_order_ttl_minutes: int = 60
 
     # Paths
     static_dir: Path = ROOT_DIR / "static"

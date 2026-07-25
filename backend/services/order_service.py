@@ -1,5 +1,5 @@
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -71,7 +71,18 @@ class OrderService:
         await self.db.refresh(order, attribute_names=["items"])
         return order
 
+    async def _expire_stale_pending(self) -> None:
+        """Брошенные (неоплаченные) заказы старше TTL помечаем отменёнными."""
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=settings.pending_order_ttl_minutes)
+        await self.db.execute(
+            update(Order)
+            .where(Order.status == "pending", Order.created_at < cutoff)
+            .values(status="cancelled")
+        )
+        await self.db.commit()
+
     async def get_by_number(self, number: str) -> Order | None:
+        await self._expire_stale_pending()
         result = await self.db.execute(
             select(Order).where(Order.number == number).options(selectinload(Order.items))
         )
@@ -88,9 +99,10 @@ class OrderService:
         await self.db.commit()
 
     async def list_for_user(self, user: User) -> list[Order]:
+        await self._expire_stale_pending()
         result = await self.db.execute(
             select(Order)
-            .where(Order.user_id == user.id)
+            .where(Order.user_id == user.id, Order.status != "cancelled")  # брошенные не показываем
             .options(selectinload(Order.items))
             .order_by(Order.created_at.desc())
         )

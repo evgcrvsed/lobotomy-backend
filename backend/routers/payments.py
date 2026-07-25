@@ -43,6 +43,30 @@ async def create_order(
     return {"number": order.number, "payment_url": payment["PaymentURL"]}
 
 
+@router.post("/orders/{number}/pay", response_model=OrderCreated)
+async def resume_payment(number: str, db: DbDep):
+    service = OrderService(db)
+    order = await service.get_by_number(number)
+    if order is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Заказ не найден")
+    if order.status != "pending":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Заказ уже оплачен или отменён")
+
+    try:
+        payment = await init_payment(
+            order_number=order.number,
+            amount_rub=order.total,
+            email=order.email,
+            description=f"Заказ {order.number}",
+        )
+    except TinkoffError as e:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
+
+    order.tinkoff_payment_id = str(payment.get("PaymentId"))
+    await db.commit()
+    return {"number": order.number, "payment_url": payment["PaymentURL"]}
+
+
 @router.post("/payments/tinkoff/webhook")
 async def tinkoff_webhook(request: Request, db: DbDep):
     payload = await request.json()
