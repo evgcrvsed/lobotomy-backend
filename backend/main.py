@@ -7,19 +7,9 @@ from sqlalchemy import select, text
 
 from backend.config import settings
 from backend.database import AsyncSessionLocal, engine
-from backend.models import Base, Collection, Product
+from backend.models import Base, Product
 from backend.routers import auth, collections, products, uploads
 from backend.services.slugs import slugify
-
-
-async def _seed_collections() -> None:
-    initial = [("Cardinal", "cardinal"), ("Gula", "gula"), ("Acedia", "acedia")]
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(select(Collection))
-        if result.scalars().first() is None:
-            for name, slug in initial:
-                session.add(Collection(name=name, slug=slug))
-            await session.commit()
 
 
 async def _backfill_product_slugs() -> None:
@@ -55,7 +45,6 @@ async def lifespan(app: FastAPI):
         await conn.execute(
             text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE")
         )
-    await _seed_collections()
     await _backfill_product_slugs()
     yield
 
