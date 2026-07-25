@@ -75,7 +75,7 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "443:443/udp"   # HTTP/3
+      # HTTP/3 (443/udp) отключён — на этом сервере QUIC нестабилен
     environment:
       # Домен для HTTPS (в .env: SITE_DOMAIN=lobo1omy.store). Не задан — работает по HTTP на :80.
       SITE_DOMAIN: ${SITE_DOMAIN:-:80}
