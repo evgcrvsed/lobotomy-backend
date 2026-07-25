@@ -23,6 +23,7 @@ class OrderCreate(BaseModel):
 
 
 class OrderItemResponse(BaseModel):
+    product_id: int | None
     name: str
     size: str | None
     price: int
