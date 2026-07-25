@@ -20,7 +20,7 @@ class OrderService:
 
     async def _unique_number(self) -> str:
         while True:
-            number = f"LOBO-{secrets.token_hex(5).upper()}"  # напр. LOBO-7F3A9C2B4E
+            number = secrets.token_hex(5).upper()  # напр. 7F3A9C2B4E — неугадываемый, без приставки
             exists = await self.db.execute(select(Order.id).where(Order.number == number))
             if exists.first() is None:
                 return number
