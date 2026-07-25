@@ -100,3 +100,18 @@ async def track_order(number: str, db: DbDep):
 @router.get("/orders/my", response_model=list[OrderResponse])
 async def my_orders(db: DbDep, user: Annotated[User, Depends(get_current_user)]):
     return await OrderService(db).list_for_user(user)
+
+
+@router.get("/orders/{number}", response_model=OrderResponse)
+async def get_order(
+    number: str,
+    db: DbDep,
+    user: Annotated[User | None, Depends(get_optional_user)],
+):
+    order = await OrderService(db).get_by_number(number)
+    if order is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Заказ не найден")
+    # чужой привязанный заказ не отдаём; гостевой (user_id пустой) — публичный по номеру
+    if order.user_id is not None and (user is None or user.id != order.user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к этому заказу")
+    return order
