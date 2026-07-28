@@ -24,6 +24,7 @@ class OrderCreate(BaseModel):
 
 
 class OrderItemResponse(BaseModel):
+    id: int
     product_id: int | None
     name: str
     size: str | None
@@ -38,6 +39,7 @@ class OrderResponse(BaseModel):
     status: str
     email: str
     full_name: str | None
+    phone: str | None
     delivery_method: str
     country: str | None
     city: str | None
@@ -61,3 +63,27 @@ class OrderCreated(BaseModel):
 
 class OrderTrackingUpdate(BaseModel):
     tracking_number: str | None = Field(default=None, max_length=100)
+
+
+class OrderItemAdminUpdate(BaseModel):
+    """Правка позиции заказа админом. Меняем только размер:
+    количество и цена влияли бы на уже оплаченную сумму."""
+
+    id: int
+    size: str | None = Field(default=None, max_length=20)
+
+
+class OrderAdminUpdate(BaseModel):
+    """Правка заказа админом (клиент написал, что ошибся в адресе/размере).
+    Суммы не трогаем — они уже оплачены."""
+
+    email: EmailStr
+    full_name: str | None = Field(default=None, max_length=255)
+    phone: str | None = Field(default=None, max_length=50)
+    delivery_method: str = Field(..., min_length=1, max_length=20)
+    country: str | None = Field(default=None, max_length=100)
+    city: str | None = Field(default=None, max_length=100)
+    address: str | None = Field(default=None, max_length=500)
+    postal_code: str | None = Field(default=None, max_length=20)
+    pickup_point: str | None = Field(default=None, max_length=500)
+    items: list[OrderItemAdminUpdate] = Field(default_factory=list, max_length=50)

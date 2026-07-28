@@ -148,6 +148,38 @@ class OrderService:
         await self.db.refresh(order, attribute_names=["items"])
         return order
 
+    async def admin_update(self, number: str, data) -> Order | None:
+        """Правка заказа админом: контакты, адрес, способ доставки, размеры позиций.
+        Суммы намеренно не пересчитываем — заказ уже оплачен, деньги прошли."""
+        order = await self.get_by_number(number)
+        if order is None:
+            return None
+
+        method = await self.db.execute(
+            select(DeliveryMethod).where(DeliveryMethod.code == data.delivery_method)
+        )
+        if method.scalar_one_or_none() is None:
+            raise OrderError(f"Способ доставки «{data.delivery_method}» недоступен")
+
+        order.email = str(data.email).lower()
+        order.full_name = data.full_name
+        order.phone = data.phone
+        order.delivery_method = data.delivery_method
+        order.country = data.country
+        order.city = data.city
+        order.address = data.address
+        order.postal_code = data.postal_code
+        order.pickup_point = data.pickup_point
+
+        sizes = {i.id: i.size for i in data.items}
+        for item in order.items:
+            if item.id in sizes:
+                item.size = sizes[item.id]
+
+        await self.db.commit()
+        await self.db.refresh(order, attribute_names=["items"])
+        return order
+
     async def list_for_user(self, user: User) -> list[Order]:
         await self._expire_stale_pending()
         result = await self.db.execute(

@@ -6,7 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
 from backend.models import User
-from backend.schemas.order import OrderCreate, OrderCreated, OrderResponse, OrderTrackingUpdate
+from backend.schemas.order import (
+    OrderAdminUpdate,
+    OrderCreate,
+    OrderCreated,
+    OrderResponse,
+    OrderTrackingUpdate,
+)
 from backend.services.auth_service import client_ip, get_current_admin, get_current_user, get_optional_user
 from backend.services.order_service import OrderError, OrderService
 from backend.services.tinkoff_service import TinkoffError, init_payment, verify_notification
@@ -113,6 +119,18 @@ async def my_orders(db: DbDep, user: Annotated[User, Depends(get_current_user)])
 async def all_orders(db: DbDep):
     """Все заказы — для админской страницы."""
     return await OrderService(db).list_all()
+
+
+@router.patch("/orders/{number}", response_model=OrderResponse, dependencies=admin_only)
+async def admin_update_order(number: str, data: OrderAdminUpdate, db: DbDep):
+    """Правка заказа админом — если покупатель ошибся в адресе или размере."""
+    try:
+        order = await OrderService(db).admin_update(number, data)
+    except OrderError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    if order is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Заказ не найден")
+    return order
 
 
 @router.patch("/orders/{number}/tracking", response_model=OrderResponse, dependencies=admin_only)

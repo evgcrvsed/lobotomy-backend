@@ -1,8 +1,10 @@
 from backend.schemas.collection import CollectionCreate, CollectionResponse, CollectionUpdate
 from backend.schemas.delivery import DeliveryMethodResponse, DeliveryMethodUpdate
 from backend.schemas.order import (
+    OrderAdminUpdate,
     OrderCreate,
     OrderCreated,
+    OrderItemAdminUpdate,
     OrderItemIn,
     OrderItemResponse,
     OrderResponse,
@@ -34,8 +36,10 @@ __all__ = [
     "CollectionUpdate",
     "EmailCodeRequest",
     "EmailCodeVerify",
+    "OrderAdminUpdate",
     "OrderCreate",
     "OrderCreated",
+    "OrderItemAdminUpdate",
     "OrderItemIn",
     "OrderItemResponse",
     "OrderResponse",
