@@ -1,5 +1,6 @@
 from backend.models.base import Base
 from backend.models.collection import Collection
+from backend.models.delivery_method import DeliveryMethod
 from backend.models.email_send_log import EmailSendLog
 from backend.models.login_code import LoginCode
 from backend.models.order import Order, OrderItem
@@ -11,6 +12,7 @@ from backend.models.user import User
 __all__ = [
     "Base",
     "Collection",
+    "DeliveryMethod",
     "EmailSendLog",
     "LoginCode",
     "Order",

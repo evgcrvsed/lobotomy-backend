@@ -7,9 +7,36 @@ from sqlalchemy import select, text
 
 from backend.config import settings
 from backend.database import AsyncSessionLocal, engine
-from backend.models import Base, Product
-from backend.routers import AuthRouter, CollectionsRouter, PaymentsRouter, ProductsRouter, UploadsRouter
+from backend.models import Base, DeliveryMethod, Product
+from backend.routers import (
+    AuthRouter,
+    CollectionsRouter,
+    DeliveryRouter,
+    PaymentsRouter,
+    ProductsRouter,
+    UploadsRouter,
+)
 from backend.services import slugify
+
+
+async def _seed_delivery_methods() -> None:
+    """Способы доставки нужны для оформления заказа, поэтому при пустой таблице
+    создаём стандартный набор. Цены и подписи потом правятся в админке."""
+    initial = [
+        ("cdek", "СДЭК", 450, "Индекс СДЭК", "Адрес пункта СДЭК", 1),
+        ("post", "Почта России", 350, "Индекс Почты России", "Адрес отделения Почты России", 2),
+        ("cis", "Страны СНГ", 750, "Индекс", "Адрес", 3),
+    ]
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(DeliveryMethod))
+        if result.scalars().first() is not None:
+            return
+        for code, label, price, index_label, point_label, order in initial:
+            session.add(DeliveryMethod(
+                code=code, label=label, price=price,
+                index_label=index_label, point_label=point_label, sort_order=order,
+            ))
+        await session.commit()
 
 
 async def _backfill_product_slugs() -> None:
@@ -46,6 +73,7 @@ async def lifespan(app: FastAPI):
             text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE")
         )
         await conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS ip VARCHAR(64)"))
+    await _seed_delivery_methods()
     await _backfill_product_slugs()
     yield
 
@@ -70,3 +98,4 @@ app.include_router(CollectionsRouter)
 app.include_router(UploadsRouter)
 app.include_router(AuthRouter)
 app.include_router(PaymentsRouter)
+app.include_router(DeliveryRouter)

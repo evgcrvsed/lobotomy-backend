@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.config import settings
-from backend.models import Order, OrderItem, Product, User
+from backend.models import DeliveryMethod, Order, OrderItem, Product, User
 from backend.schemas.order import OrderCreate
 
 
@@ -57,7 +57,14 @@ class OrderService:
                 qty=line.qty,
             ))
 
-        delivery_price = settings.delivery_prices.get(data.delivery_method, 0)
+        # Цена доставки — из БД (её меняет админ), а не из клиента и не из кода
+        method = await self.db.execute(
+            select(DeliveryMethod).where(DeliveryMethod.code == data.delivery_method)
+        )
+        delivery = method.scalar_one_or_none()
+        if delivery is None:
+            raise OrderError(f"Способ доставки «{data.delivery_method}» недоступен")
+        delivery_price = delivery.price
 
         order = Order(
             number=await self._unique_number(),
