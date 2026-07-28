@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_db
 from backend.models import User
 from backend.schemas.order import OrderCreate, OrderCreated, OrderResponse, OrderTrackingUpdate
-from backend.services.auth_service import get_current_admin, get_current_user, get_optional_user
+from backend.services.auth_service import client_ip, get_current_admin, get_current_user, get_optional_user
 from backend.services.order_service import OrderError, OrderService
 from backend.services.tinkoff_service import TinkoffError, init_payment, verify_notification
 
@@ -20,12 +20,13 @@ admin_only = [Depends(get_current_admin)]
 @router.post("/orders", response_model=OrderCreated, status_code=status.HTTP_201_CREATED)
 async def create_order(
     data: OrderCreate,
+    request: Request,
     db: DbDep,
     user: Annotated[User | None, Depends(get_optional_user)],
 ):
     service = OrderService(db)
     try:
-        order = await service.create(data, user)
+        order = await service.create(data, user, ip=client_ip(request))
     except OrderError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -76,10 +77,15 @@ async def tinkoff_webhook(request: Request, db: DbDep):
 
     # CONFIRMED — оплата прошла (одностадийная схема)
     if payload.get("Status") == "CONFIRMED":
-        await OrderService(db).mark_paid(
+        amount = payload.get("Amount")
+        ok = await OrderService(db).mark_paid(
             number=str(payload.get("OrderId")),
             payment_id=str(payload.get("PaymentId")) if payload.get("PaymentId") else None,
+            amount_kopecks=int(amount) if amount is not None else None,
         )
+        if not ok:
+            # заказ не найден или сумма разошлась — в логи, разбирать вручную
+            print(f"[webhook] не удалось подтвердить заказ {payload.get('OrderId')}, сумма {amount}")
     # Т-Банк ждёт именно тело "OK", иначе будет повторять уведомление
     return PlainTextResponse("OK")
 

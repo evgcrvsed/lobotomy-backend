@@ -5,8 +5,9 @@ from pydantic import BaseModel, EmailStr, Field
 
 class OrderItemIn(BaseModel):
     product_id: int
-    size: str | None = None
-    qty: int = Field(..., ge=1)
+    size: str | None = Field(default=None, max_length=20)
+    # верхняя граница обязательна: иначе qty=999999999 даёт абсурдную сумму
+    qty: int = Field(..., ge=1, le=100)
 
 
 class OrderCreate(BaseModel):
@@ -19,7 +20,7 @@ class OrderCreate(BaseModel):
     address: str | None = Field(default=None, max_length=500)
     postal_code: str | None = Field(default=None, max_length=20)
     pickup_point: str | None = Field(default=None, max_length=500)
-    items: list[OrderItemIn] = Field(..., min_length=1)
+    items: list[OrderItemIn] = Field(..., min_length=1, max_length=50)
 
 
 class OrderItemResponse(BaseModel):

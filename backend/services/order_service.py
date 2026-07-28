@@ -1,7 +1,7 @@
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -25,7 +25,18 @@ class OrderService:
             if exists.first() is None:
                 return number
 
-    async def create(self, data: OrderCreate, user: User | None) -> Order:
+    async def create(self, data: OrderCreate, user: User | None, ip: str | None = None) -> Order:
+        # Антиспам: с одного IP нельзя лепить заказы пачками
+        # (каждый заказ — это ещё и запрос на создание платежа в Т-Банк)
+        if ip:
+            recent = await self.db.execute(
+                select(func.count())
+                .select_from(Order)
+                .where(Order.ip == ip, Order.created_at > datetime.now(timezone.utc) - timedelta(minutes=10))
+            )
+            if recent.scalar_one() >= settings.order_ip_limit_10min:
+                raise OrderError("Слишком много заказов подряд. Попробуйте через несколько минут")
+
         # Собираем товары и считаем сумму ТОЛЬКО по ценам из БД — клиенту не доверяем
         product_ids = {i.product_id for i in data.items}
         result = await self.db.execute(select(Product).where(Product.id.in_(product_ids)))
@@ -64,6 +75,7 @@ class OrderService:
             delivery_price=delivery_price,
             total=items_total + delivery_price,
             status="pending",
+            ip=ip,
             items=items,
         )
         self.db.add(order)
@@ -88,15 +100,24 @@ class OrderService:
         )
         return result.scalar_one_or_none()
 
-    async def mark_paid(self, number: str, payment_id: str | None) -> None:
+    async def mark_paid(self, number: str, payment_id: str | None, amount_kopecks: int | None = None) -> bool:
+        """Помечает заказ оплаченным. Возвращает False, если заказа нет
+        или пришедшая сумма не совпала с суммой заказа."""
         order = await self.get_by_number(number)
-        if order is None or order.status == "paid":
-            return
+        if order is None:
+            return False
+        # сверяем сумму: она пришла подписанной от банка, но лучше убедиться,
+        # что оплатили именно столько, сколько стоит заказ
+        if amount_kopecks is not None and amount_kopecks != order.total * 100:
+            return False
+        if order.status in ("paid", "shipped"):  # повторное уведомление — ничего не меняем
+            return True
         order.status = "paid"
         order.paid_at = datetime.now(timezone.utc)
         if payment_id:
             order.tinkoff_payment_id = payment_id
         await self.db.commit()
+        return True
 
     async def list_all(self) -> list[Order]:
         """Все заказы — для админки (включая отменённые и неоплаченные)."""

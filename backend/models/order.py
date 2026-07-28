@@ -37,6 +37,7 @@ class Order(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
     tinkoff_payment_id: Mapped[str | None] = mapped_column(String(50))
     tracking_number: Mapped[str | None] = mapped_column(String(100))  # админ впишет позже
+    ip: Mapped[str | None] = mapped_column(String(64), index=True)  # для антиспама и разбора спорных заказов
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

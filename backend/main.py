@@ -45,6 +45,7 @@ async def lifespan(app: FastAPI):
         await conn.execute(
             text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE")
         )
+        await conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS ip VARCHAR(64)"))
     await _backfill_product_slugs()
     yield
 

@@ -2,13 +2,13 @@ import hmac
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
 from backend.database import get_db
-from backend.models import LoginCode, User
+from backend.models import EmailSendLog, LoginCode, User
 from backend.schemas.user import (
     AuthResponse,
     EmailCodeRequest,
@@ -21,6 +21,7 @@ from backend.services.auth_service import (
     EmailNotConfiguredError,
     EmailSendError,
     VkAuthError,
+    client_ip,
     create_token,
     fetch_vk_user,
     generate_login_code,
@@ -37,11 +38,12 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
 @router.post("/email/request")
-async def request_email_code(data: EmailCodeRequest, db: DbDep):
+async def request_email_code(data: EmailCodeRequest, request: Request, db: DbDep):
     email = data.email.strip().lower()
     now = datetime.now(timezone.utc)
+    ip = client_ip(request)
 
-    # антиспам: не чаще одного письма раз в N секунд
+    # антиспам №1: не чаще одного письма раз в N секунд на один адрес
     recent = await db.execute(
         select(LoginCode).where(LoginCode.email == email).order_by(LoginCode.created_at.desc())
     )
@@ -52,11 +54,37 @@ async def request_email_code(data: EmailCodeRequest, db: DbDep):
             detail="Код уже отправлен, подождите немного",
         )
 
+    # антиспам №2: лимит писем с одного IP — иначе можно рассылать
+    # на тысячи чужих адресов и сжечь квоту/репутацию домена
+    sent_10min = await db.execute(
+        select(func.count())
+        .select_from(EmailSendLog)
+        .where(EmailSendLog.ip == ip, EmailSendLog.created_at > now - timedelta(minutes=10))
+    )
+    sent_hour = await db.execute(
+        select(func.count())
+        .select_from(EmailSendLog)
+        .where(EmailSendLog.ip == ip, EmailSendLog.created_at > now - timedelta(hours=1))
+    )
+    if (
+        sent_10min.scalar_one() >= settings.email_ip_limit_10min
+        or sent_hour.scalar_one() >= settings.email_ip_limit_hour
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Слишком много запросов кода. Попробуйте позже",
+        )
+
     # один активный код на почту — старые убираем
     await db.execute(delete(LoginCode).where(LoginCode.email == email))
     code = generate_login_code()
     expires_at = now + timedelta(minutes=settings.email_code_ttl_minutes) if settings.email_code_ttl_minutes else None
     db.add(LoginCode(email=email, code_hash=hash_login_code(email, code), expires_at=expires_at))
+
+    # Считаем ПОПЫТКУ, а не успешную отправку: обращение к Resend расходует
+    # квоту даже когда он отвечает ошибкой, значит и его надо ограничивать.
+    db.add(EmailSendLog(ip=ip, email=email))
+    await db.execute(delete(EmailSendLog).where(EmailSendLog.created_at < now - timedelta(days=1)))
     await db.commit()
 
     try:
@@ -151,8 +179,10 @@ async def get_me(user: CurrentUser):
 
 @router.put("/me", response_model=UserResponse)
 async def update_me(data: UserUpdate, user: CurrentUser, db: DbDep):
+    # Почту менять здесь нельзя: она подтверждена входом и служит ключом,
+    # по которому находится аккаунт и привязываются гостевые заказы.
+    # Иначе можно было бы вписать чужой адрес и увести чужие заказы.
     user.full_name = data.full_name
-    user.email = data.email
     user.address = data.address
     user.city = data.city
     user.postal_code = data.postal_code

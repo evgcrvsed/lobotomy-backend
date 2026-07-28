@@ -32,6 +32,15 @@ class EmailSendError(Exception):
     pass
 
 
+def client_ip(request) -> str:
+    """Реальный IP клиента. Мы всегда за прокси (Caddy -> nginx -> backend),
+    поэтому берём первый адрес из X-Forwarded-For, а не адрес соседнего контейнера."""
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()[:64]
+    return (request.client.host if request.client else "unknown")[:64]
+
+
 def generate_login_code() -> str:
     """Шестизначный код, равномерно случайный."""
     return f"{secrets.randbelow(1_000_000):06d}"

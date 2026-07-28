@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     email_code_ttl_minutes: int = 15  # срок жизни кода; 0 — код не протухает (небезопасно)
     email_code_resend_seconds: int = 30  # не чаще одного запроса кода на почту за это время
     email_code_max_attempts: int = 5  # после стольких неверных попыток код сгорает
+    # Антиспам по IP: сколько писем с кодом можно запросить с одного адреса
+    email_ip_limit_10min: int = 5
+    email_ip_limit_hour: int = 15
 
     # Оплата (Т-Банк / Tinkoff)
     tinkoff_terminal_key: str = ""  # пусто — оплата выключена
@@ -46,6 +49,8 @@ class Settings(BaseSettings):
 
     # Доставка (цены в рублях; сумму всегда считаем на сервере)
     delivery_prices: dict[str, int] = {"cdek": 450, "post": 350, "cis": 750}
+    # Антиспам заказов: сколько заказов можно создать с одного IP за 10 минут
+    order_ip_limit_10min: int = 10
     # Через сколько минут неоплаченный заказ считается брошенным и отменяется
     pending_order_ttl_minutes: int = 60
 
