@@ -6,14 +6,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
 from backend.models import User
-from backend.schemas.order import OrderCreate, OrderCreated, OrderResponse
-from backend.services.auth_service import get_current_user, get_optional_user
+from backend.schemas.order import OrderCreate, OrderCreated, OrderResponse, OrderTrackingUpdate
+from backend.services.auth_service import get_current_admin, get_current_user, get_optional_user
 from backend.services.order_service import OrderError, OrderService
 from backend.services.tinkoff_service import TinkoffError, init_payment, verify_notification
 
 router = APIRouter(prefix="/api", tags=["orders"])
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
+admin_only = [Depends(get_current_admin)]
 
 
 @router.post("/orders", response_model=OrderCreated, status_code=status.HTTP_201_CREATED)
@@ -100,6 +101,20 @@ async def track_order(number: str, db: DbDep):
 @router.get("/orders/my", response_model=list[OrderResponse])
 async def my_orders(db: DbDep, user: Annotated[User, Depends(get_current_user)]):
     return await OrderService(db).list_for_user(user)
+
+
+@router.get("/orders", response_model=list[OrderResponse], dependencies=admin_only)
+async def all_orders(db: DbDep):
+    """Все заказы — для админской страницы."""
+    return await OrderService(db).list_all()
+
+
+@router.patch("/orders/{number}/tracking", response_model=OrderResponse, dependencies=admin_only)
+async def set_tracking(number: str, data: OrderTrackingUpdate, db: DbDep):
+    order = await OrderService(db).set_tracking(number, (data.tracking_number or "").strip())
+    if order is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Заказ не найден")
+    return order
 
 
 @router.get("/orders/{number}", response_model=OrderResponse)

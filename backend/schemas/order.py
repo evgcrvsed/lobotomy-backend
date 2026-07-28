@@ -56,3 +56,7 @@ class OrderResponse(BaseModel):
 class OrderCreated(BaseModel):
     number: str
     payment_url: str
+
+
+class OrderTrackingUpdate(BaseModel):
+    tracking_number: str | None = Field(default=None, max_length=100)

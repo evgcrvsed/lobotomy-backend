@@ -98,6 +98,28 @@ class OrderService:
             order.tinkoff_payment_id = payment_id
         await self.db.commit()
 
+    async def list_all(self) -> list[Order]:
+        """Все заказы — для админки (включая отменённые и неоплаченные)."""
+        await self._expire_stale_pending()
+        result = await self.db.execute(
+            select(Order).options(selectinload(Order.items)).order_by(Order.created_at.desc())
+        )
+        return list(result.scalars())
+
+    async def set_tracking(self, number: str, tracking: str | None) -> Order | None:
+        order = await self.get_by_number(number)
+        if order is None:
+            return None
+        order.tracking_number = tracking or None
+        # появился трек у оплаченного заказа — считаем его отправленным
+        if order.tracking_number and order.status == "paid":
+            order.status = "shipped"
+        elif not order.tracking_number and order.status == "shipped":
+            order.status = "paid"
+        await self.db.commit()
+        await self.db.refresh(order, attribute_names=["items"])
+        return order
+
     async def list_for_user(self, user: User) -> list[Order]:
         await self._expire_stale_pending()
         result = await self.db.execute(
