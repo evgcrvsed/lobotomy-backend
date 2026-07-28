@@ -8,8 +8,8 @@ from sqlalchemy import select, text
 from backend.config import settings
 from backend.database import AsyncSessionLocal, engine
 from backend.models import Base, Product
-from backend.routers import auth, collections, payments, products, uploads
-from backend.services.slugs import slugify
+from backend.routers import AuthRouter, CollectionsRouter, PaymentsRouter, ProductsRouter, UploadsRouter
+from backend.services import slugify
 
 
 async def _backfill_product_slugs() -> None:
@@ -58,14 +58,14 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=settings.cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="static")
-app.include_router(products.router)
-app.include_router(collections.router)
-app.include_router(uploads.router)
-app.include_router(auth.router)
-app.include_router(payments.router)
+app.include_router(ProductsRouter)
+app.include_router(CollectionsRouter)
+app.include_router(UploadsRouter)
+app.include_router(AuthRouter)
+app.include_router(PaymentsRouter)

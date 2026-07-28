@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     email_from: str = "noreply@lobo1omy.store"  # адрес отправителя; для реальных писем нужен свой домен
     email_code_ttl_minutes: int = 15  # срок жизни кода; 0 — код не протухает (небезопасно)
     email_code_resend_seconds: int = 30  # не чаще одного запроса кода на почту за это время
+    email_code_max_attempts: int = 5  # после стольких неверных попыток код сгорает
 
     # Оплата (Т-Банк / Tinkoff)
     tinkoff_terminal_key: str = ""  # пусто — оплата выключена
@@ -47,6 +48,9 @@ class Settings(BaseSettings):
     delivery_prices: dict[str, int] = {"cdek": 450, "post": 350, "cis": 750}
     # Через сколько минут неоплаченный заказ считается брошенным и отменяется
     pending_order_ttl_minutes: int = 60
+
+    # CORS — источники, которым разрешено ходить в API из браузера
+    cors_origins: list[str] = ["http://localhost:5173"]
 
     # Paths
     static_dir: Path = ROOT_DIR / "static"

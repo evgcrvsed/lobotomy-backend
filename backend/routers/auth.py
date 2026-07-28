@@ -86,7 +86,7 @@ async def verify_email_code(data: EmailCodeVerify, db: DbDep):
         await db.commit()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Код истёк, запросите новый")
 
-    if login_code.attempts >= 5:
+    if login_code.attempts >= settings.email_code_max_attempts:
         await db.execute(delete(LoginCode).where(LoginCode.email == email))
         await db.commit()
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Слишком много попыток")
