@@ -72,9 +72,20 @@ class OrderItemAdminUpdate(BaseModel):
     size: str | None = Field(default=None, max_length=20)
 
 
+class OrderItemAdminAdd(BaseModel):
+    """Дозаказ: админ доносит в уже созданный заказ новую позицию.
+    Цену можно задать вручную (0 — подарок/замена), иначе берётся текущая цена товара."""
+
+    product_id: int
+    size: str | None = Field(default=None, max_length=20)
+    qty: int = Field(default=1, ge=1, le=100)
+    price: int | None = Field(default=None, ge=0, le=10_000_000)
+
+
 class OrderAdminUpdate(BaseModel):
     """Правка заказа админом (клиент написал, что ошибся в адресе/размере).
-    Суммы не трогаем — они уже оплачены."""
+    Суммы существующих позиций не трогаем — они уже оплачены,
+    но добавленные позиции меняют итог (доплату админ собирает отдельно)."""
 
     email: EmailStr
     full_name: str | None = Field(default=None, max_length=255)
@@ -86,3 +97,4 @@ class OrderAdminUpdate(BaseModel):
     postal_code: str | None = Field(default=None, max_length=20)
     pickup_point: str | None = Field(default=None, max_length=500)
     items: list[OrderItemAdminUpdate] = Field(default_factory=list, max_length=50)
+    new_items: list[OrderItemAdminAdd] = Field(default_factory=list, max_length=50)

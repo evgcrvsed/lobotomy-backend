@@ -128,12 +128,14 @@ class OrderService:
         order = await self.get_by_number(number)
         if order is None:
             return False
+        # Повторное уведомление — ничего не меняем. Проверять сумму тут нельзя:
+        # админ мог дозаказать позицию, и total уже отличается от оплаченного.
+        if order.status in ("paid", "shipped"):
+            return True
         # сверяем сумму: она пришла подписанной от банка, но лучше убедиться,
         # что оплатили именно столько, сколько стоит заказ
         if amount_kopecks is not None and amount_kopecks != order.total * 100:
             return False
-        if order.status in ("paid", "shipped"):  # повторное уведомление — ничего не меняем
-            return True
         order.status = "paid"
         order.paid_at = datetime.now(timezone.utc)
         if payment_id:
@@ -164,8 +166,12 @@ class OrderService:
         return order
 
     async def admin_update(self, number: str, data) -> Order | None:
-        """Правка заказа админом: контакты, адрес, способ доставки, размеры позиций.
-        Суммы намеренно не пересчитываем — заказ уже оплачен, деньги прошли."""
+        """Правка заказа админом: контакты, адрес, способ доставки, размеры позиций
+        и дозаказ новых позиций.
+
+        Цены и количества уже оплаченных позиций не трогаем — деньги прошли.
+        А вот добавленные позиции меняют items_total и total: доплату админ
+        собирает отдельно, заказ лишь фиксирует, что именно клиент получит."""
         order = await self.get_by_number(number)
         if order is None:
             return None
@@ -190,6 +196,28 @@ class OrderService:
         for item in order.items:
             if item.id in sizes:
                 item.size = sizes[item.id]
+
+        new_items = getattr(data, "new_items", None) or []
+        if new_items:
+            result = await self.db.execute(
+                select(Product).where(Product.id.in_({i.product_id for i in new_items}))
+            )
+            products = {p.id: p for p in result.scalars()}
+            for line in new_items:
+                product = products.get(line.product_id)
+                if product is None:
+                    raise OrderError(f"Товар id={line.product_id} не найден")
+                order.items.append(OrderItem(
+                    product_id=product.id,
+                    name=product.name,
+                    size=line.size,
+                    # цену админ может задать вручную (0 — подарок или замена),
+                    # иначе берём текущую цену товара
+                    price=product.price if line.price is None else line.price,
+                    qty=line.qty,
+                ))
+            order.items_total = sum(i.price * i.qty for i in order.items)
+            order.total = order.items_total + order.delivery_price
 
         await self.db.commit()
         await self.db.refresh(order, attribute_names=["items"])
