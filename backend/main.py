@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import func, select, text
+from sqlalchemy import select, text
 
 from backend.config import settings
 from backend.database import AsyncSessionLocal, engine
@@ -65,22 +65,25 @@ async def _backfill_product_slugs() -> None:
 
 
 async def _backfill_product_sort_order() -> None:
-    """Раскладывает товары, созданные до появления порядка, с шагом 10.
+    """Расставляет порядок товарам, созданным до появления этой колонки: шаг 10.
 
-    Текущий вид каталога сохраняется (нумеруем в прежнем порядке — по id),
-    но между соседями появляется место, чтобы вставить товар без перенумерации.
+    Работает ровно один раз — пока ни у одного товара порядок не задан.
+    Как только в каталоге появился хоть один ненулевой номер, считаем разметку
+    сделанной и больше не вмешиваемся: иначе выставленный вручную 0
+    («в самое начало») на следующем перезапуске уехал бы в конец каталога.
     """
     async with AsyncSessionLocal() as session:
-        result = await session.execute(select(Product).where(Product.sort_order == 0).order_by(Product.id))
-        unsorted = list(result.scalars())
-        if not unsorted:
+        already = await session.execute(select(Product.id).where(Product.sort_order != 0).limit(1))
+        if already.first() is not None:
             return
-        # начинаем после уже расставленных товаров, чтобы их не перемешать
-        taken = await session.execute(select(func.max(Product.sort_order)))
-        step = ProductService.SORT_STEP
-        start = (taken.scalar() or 0)
-        for i, product in enumerate(unsorted, start=1):
-            product.sort_order = start + i * step
+
+        result = await session.execute(select(Product).order_by(Product.id))
+        products = list(result.scalars())
+        if not products:
+            return
+        # нумеруем в прежнем порядке (по id), чтобы каталог не перетасовался
+        for i, product in enumerate(products, start=1):
+            product.sort_order = i * ProductService.SORT_STEP
         await session.commit()
 
 
