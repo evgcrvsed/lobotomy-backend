@@ -33,11 +33,18 @@ class Order(Base):
     delivery_price: Mapped[int] = mapped_column(nullable=False)
     total: Mapped[int] = mapped_column(nullable=False)
 
-    # new | pending | paid | shipped | cancelled
+    # pending | paid | shipped | ready | delivered | cancelled
+    # После shipped статус ведёт СДЭК — см. services/cdek_sync.py
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
     tinkoff_payment_id: Mapped[str | None] = mapped_column(String(50))
     tracking_number: Mapped[str | None] = mapped_column(String(100))  # админ впишет позже
     ip: Mapped[str | None] = mapped_column(String(64), index=True)  # для антиспама и разбора спорных заказов
+
+    # Данные СДЭК по трек-номеру
+    cdek_status_code: Mapped[str | None] = mapped_column(String(50))
+    cdek_status_name: Mapped[str | None] = mapped_column(String(200))  # человеческая подпись от СДЭК
+    cdek_status_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # когда СДЭК его поставил
+    cdek_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # когда мы спрашивали
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

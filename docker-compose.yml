@@ -40,6 +40,9 @@ services:
       TINKOFF_PASSWORD: ${TINKOFF_PASSWORD:-}
       TINKOFF_SEND_RECEIPT: ${TINKOFF_SEND_RECEIPT:-false}
       SITE_URL: ${SITE_URL:-https://lobo1omy.store}
+      # СДЭК — автообновление статусов заказов по трек-номеру
+      CDEK_CLIENT_ID: ${CDEK_CLIENT_ID:-}
+      CDEK_CLIENT_SECRET: ${CDEK_CLIENT_SECRET:-}
     volumes:
       # Загруженные через админку фото должны переживать пересборку контейнера
       - static_images:/app/static/images

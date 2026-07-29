@@ -75,7 +75,7 @@ class OrderService:
             user_id=user.id if user else None,
             email=email,
             full_name=data.full_name,
-            phone=user.phone if user else None,  # телефон берём из профиля
+            phone=data.phone or (user.phone if user else None),
             delivery_method=data.delivery_method,
             country=data.country,
             city=data.city,
@@ -95,6 +95,7 @@ class OrderService:
         # Почту НЕ трогаем: она подтверждена входом и менять её через заказ нельзя.
         if user is not None:
             user.full_name = data.full_name or user.full_name
+            user.phone = data.phone or user.phone
             user.country = data.country or user.country
             user.city = data.city or user.city
             user.address = data.address or user.address
@@ -155,12 +156,22 @@ class OrderService:
         order = await self.get_by_number(number)
         if order is None:
             return None
+        changed = order.tracking_number != (tracking or None)
         order.tracking_number = tracking or None
         # появился трек у оплаченного заказа — считаем его отправленным
         if order.tracking_number and order.status == "paid":
             order.status = "shipped"
-        elif not order.tracking_number and order.status == "shipped":
-            order.status = "paid"
+        elif not order.tracking_number:
+            # трек убрали — статусы СДЭК больше ни о чём не говорят
+            if order.status in ("shipped", "ready", "delivered"):
+                order.status = "paid"
+            order.cdek_status_code = None
+            order.cdek_status_name = None
+            order.cdek_status_at = None
+        if changed:
+            # номер новый — пусть ближайший проход СДЭК проверит его сразу,
+            # не дожидаясь окна перепроверки
+            order.cdek_checked_at = None
         await self.db.commit()
         await self.db.refresh(order, attribute_names=["items"])
         return order

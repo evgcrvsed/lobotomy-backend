@@ -1,4 +1,5 @@
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,6 +18,7 @@ from backend.routers import (
     UploadsRouter,
 )
 from backend.services import slugify
+from backend.services.cdek_sync import poll_forever
 
 
 async def _seed_delivery_methods() -> None:
@@ -79,9 +81,24 @@ async def lifespan(app: FastAPI):
             ("pickup_point", "VARCHAR(500)"),
         ):
             await conn.execute(text(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col} {ddl}"))
+        for col, ddl in (
+            ("cdek_status_code", "VARCHAR(50)"),
+            ("cdek_status_name", "VARCHAR(200)"),
+            ("cdek_status_at", "TIMESTAMPTZ"),
+            ("cdek_checked_at", "TIMESTAMPTZ"),
+        ):
+            await conn.execute(text(f"ALTER TABLE orders ADD COLUMN IF NOT EXISTS {col} {ddl}"))
     await _seed_delivery_methods()
     await _backfill_product_slugs()
-    yield
+
+    # Фоновый опрос СДЭК: сам решает, кого и когда проверять
+    cdek_task = asyncio.create_task(poll_forever())
+    try:
+        yield
+    finally:
+        cdek_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await cdek_task
 
 
 app = FastAPI(

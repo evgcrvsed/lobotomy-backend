@@ -1,5 +1,6 @@
 from typing import Annotated
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +15,8 @@ from backend.schemas.order import (
     OrderTrackingUpdate,
 )
 from backend.services.auth_service import client_ip, get_current_admin, get_current_user, get_optional_user
+from backend.services.cdek_service import CdekError
+from backend.services.cdek_sync import sync_order
 from backend.services.order_service import OrderError, OrderService
 from backend.services.tinkoff_service import TinkoffError, init_payment, verify_notification
 
@@ -138,6 +141,27 @@ async def set_tracking(number: str, data: OrderTrackingUpdate, db: DbDep):
     order = await OrderService(db).set_tracking(number, (data.tracking_number or "").strip())
     if order is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Заказ не найден")
+    return order
+
+
+@router.post("/orders/{number}/cdek-sync", response_model=OrderResponse, dependencies=admin_only)
+async def sync_cdek(number: str, db: DbDep):
+    """Спросить у СДЭК статус прямо сейчас, не дожидаясь фонового опроса."""
+    service = OrderService(db)
+    order = await service.get_by_number(number)
+    if order is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Заказ не найден")
+    if not order.tracking_number:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="У заказа нет трек-номера")
+
+    try:
+        async with httpx.AsyncClient(timeout=25) as client:
+            await sync_order(order, client)
+    except CdekError as e:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
+
+    await db.commit()
+    await db.refresh(order, attribute_names=["items"])
     return order
 
 

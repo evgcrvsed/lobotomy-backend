@@ -13,6 +13,7 @@ class OrderItemIn(BaseModel):
 class OrderCreate(BaseModel):
     email: EmailStr
     full_name: str | None = Field(default=None, max_length=255)
+    phone: str | None = Field(default=None, max_length=50)  # нужен службе доставки
     delivery_method: str = Field(..., min_length=1, max_length=20)  # проверяется по БД
     country: str | None = Field(default=None, max_length=100)
     city: str | None = Field(default=None, max_length=100)
@@ -49,6 +50,10 @@ class OrderResponse(BaseModel):
     delivery_price: int
     total: int
     tracking_number: str | None
+    # Подпись статуса от СДЭК («Принят на склад до востребования») —
+    # показываем рядом с нашим статусом, она точнее
+    cdek_status_name: str | None = None
+    cdek_status_at: datetime | None = None
     created_at: datetime
     items: list[OrderItemResponse]
 

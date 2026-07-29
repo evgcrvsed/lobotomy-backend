@@ -1,5 +1,8 @@
 FROM python:3.12-slim
 
+# Без этого print() буферизуется и сообщения не попадают в docker logs
+ENV PYTHONUNBUFFERED=1
+
 # Рабочая директория внутри контейнера
 WORKDIR /app
 
