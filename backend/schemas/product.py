@@ -47,6 +47,8 @@ class ProductCreate(BaseModel):
     material: str | None = Field(default=None, max_length=200)
     density: int | None = Field(default=None, gt=0, description="г/м²")
     price: int = Field(..., gt=0)
+    # Порядок в каталоге. None — поставить в конец (текущий максимум + шаг)
+    sort_order: int | None = Field(default=None, ge=0, le=100_000)
     images: list[ProductImageCreate] = Field(default_factory=list)
     sizes: list[ProductSizeCreate] = Field(default_factory=list)
 
@@ -60,6 +62,7 @@ class ProductResponse(BaseModel):
     material: str | None
     density: int | None
     price: int
+    sort_order: int
     images: list[ProductImageResponse]
     sizes: list[ProductSizeResponse]
 

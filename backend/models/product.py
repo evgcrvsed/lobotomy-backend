@@ -18,6 +18,9 @@ class Product(Base):
     material: Mapped[str | None] = mapped_column(String(200))
     density: Mapped[int | None] = mapped_column()
     price: Mapped[int | None] = mapped_column(nullable=False)
+    # Порядок в каталоге: меньше — выше. Новым товарам ставится с запасом
+    # (шаг 10), чтобы товар можно было вставить между двумя, ничего не перенумеровывая.
+    sort_order: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
 
     collection: Mapped["Collection"] = relationship(back_populates="products")
     images: Mapped[list["ProductImage"]] = relationship(

@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -16,13 +16,23 @@ class ProductService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    # Шаг между соседними товарами: оставляет место, чтобы вставить
+    # новый товар между двумя существующими без перенумерации
+    SORT_STEP = 10
+
     async def list_all(self) -> list[Product]:
         result = await self.db.execute(
             select(Product)
             .options(selectinload(Product.images), selectinload(Product.sizes))
-            .order_by(Product.id)
+            # id вторым ключом: при равных номерах порядок остаётся стабильным
+            .order_by(Product.sort_order, Product.id)
         )
         return list(result.scalars().all())
+
+    async def _next_sort_order(self) -> int:
+        """Номер для товара, который встаёт в конец каталога."""
+        result = await self.db.execute(select(func.max(Product.sort_order)))
+        return (result.scalar() or 0) + self.SORT_STEP
 
     async def get_by_id(self, product_id: int) -> Product | None:
         result = await self.db.execute(
@@ -80,6 +90,7 @@ class ProductService:
             material=data.material,
             density=data.density,
             price=data.price,
+            sort_order=data.sort_order if data.sort_order is not None else await self._next_sort_order(),
         )
         self.db.add(product)
         await self.db.flush()
@@ -126,6 +137,8 @@ class ProductService:
         product.material = data.material
         product.density = data.density
         product.price = data.price
+        if data.sort_order is not None:
+            product.sort_order = data.sort_order
 
         for img in list(product.images):
             await self.db.delete(img)

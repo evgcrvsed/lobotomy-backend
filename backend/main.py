@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 
 from backend.config import settings
 from backend.database import AsyncSessionLocal, engine
@@ -19,6 +19,7 @@ from backend.routers import (
 )
 from backend.services import slugify
 from backend.services.cdek_sync import poll_forever
+from backend.services.product_service import ProductService
 
 
 async def _seed_delivery_methods() -> None:
@@ -63,6 +64,26 @@ async def _backfill_product_slugs() -> None:
             await session.commit()
 
 
+async def _backfill_product_sort_order() -> None:
+    """Раскладывает товары, созданные до появления порядка, с шагом 10.
+
+    Текущий вид каталога сохраняется (нумеруем в прежнем порядке — по id),
+    но между соседями появляется место, чтобы вставить товар без перенумерации.
+    """
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Product).where(Product.sort_order == 0).order_by(Product.id))
+        unsorted = list(result.scalars())
+        if not unsorted:
+            return
+        # начинаем после уже расставленных товаров, чтобы их не перемешать
+        taken = await session.execute(select(func.max(Product.sort_order)))
+        step = ProductService.SORT_STEP
+        start = (taken.scalar() or 0)
+        for i, product in enumerate(unsorted, start=1):
+            product.sort_order = start + i * step
+        await session.commit()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
@@ -71,6 +92,9 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS slug VARCHAR(200)"))
         await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_products_slug ON products (slug)"))
         await conn.execute(text("ALTER TABLE collections ADD COLUMN IF NOT EXISTS image VARCHAR(255)"))
+        await conn.execute(
+            text("ALTER TABLE products ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0")
+        )
         await conn.execute(
             text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE")
         )
@@ -90,6 +114,7 @@ async def lifespan(app: FastAPI):
             await conn.execute(text(f"ALTER TABLE orders ADD COLUMN IF NOT EXISTS {col} {ddl}"))
     await _seed_delivery_methods()
     await _backfill_product_slugs()
+    await _backfill_product_sort_order()
 
     # Фоновый опрос СДЭК: сам решает, кого и когда проверять
     cdek_task = asyncio.create_task(poll_forever())
