@@ -75,7 +75,7 @@ class OrderService:
             user_id=user.id if user else None,
             email=email,
             full_name=data.full_name,
-            phone=data.phone,
+            phone=user.phone if user else None,  # телефон берём из профиля
             delivery_method=data.delivery_method,
             country=data.country,
             city=data.city,
@@ -95,7 +95,6 @@ class OrderService:
         # Почту НЕ трогаем: она подтверждена входом и менять её через заказ нельзя.
         if user is not None:
             user.full_name = data.full_name or user.full_name
-            user.phone = data.phone or user.phone
             user.country = data.country or user.country
             user.city = data.city or user.city
             user.address = data.address or user.address
