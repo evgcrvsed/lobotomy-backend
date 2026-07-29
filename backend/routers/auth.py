@@ -182,10 +182,9 @@ async def update_me(data: UserUpdate, user: CurrentUser, db: DbDep):
     # Почту менять здесь нельзя: она подтверждена входом и служит ключом,
     # по которому находится аккаунт и привязываются гостевые заказы.
     # Иначе можно было бы вписать чужой адрес и увести чужие заказы.
-    user.full_name = data.full_name
-    user.address = data.address
-    user.city = data.city
-    user.postal_code = data.postal_code
+    # проходим по полям схемы: добавится новое поле — попадёт сюда само
+    for field, value in data.model_dump().items():
+        setattr(user, field, value)
     await db.commit()
     await db.refresh(user)
     return user

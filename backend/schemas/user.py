@@ -7,19 +7,27 @@ class UserResponse(BaseModel):
     is_admin: bool
     full_name: str | None
     email: str | None
-    address: str | None
+    phone: str | None
+    country: str | None
     city: str | None
+    address: str | None
     postal_code: str | None
+    pickup_point: str | None
 
     model_config = {"from_attributes": True}
 
 
 class UserUpdate(BaseModel):
+    """Правка своего профиля. Почты здесь нет намеренно: она подтверждена
+    входом и служит ключом аккаунта — менять её нельзя."""
+
     full_name: str | None = Field(default=None, max_length=255)
-    email: str | None = Field(default=None, max_length=255)
-    address: str | None = Field(default=None, max_length=500)
+    phone: str | None = Field(default=None, max_length=50)
+    country: str | None = Field(default=None, max_length=100)
     city: str | None = Field(default=None, max_length=100)
+    address: str | None = Field(default=None, max_length=500)
     postal_code: str | None = Field(default=None, max_length=20)
+    pickup_point: str | None = Field(default=None, max_length=500)
 
 
 class VkLoginRequest(BaseModel):

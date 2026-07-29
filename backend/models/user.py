@@ -15,10 +15,14 @@ class User(Base):
     vk_id: Mapped[str | None] = mapped_column(String(50), unique=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
 
+    # Данные доставки: заполняются в профиле или сами при оформлении заказа
     full_name: Mapped[str | None] = mapped_column(String(255))
     email: Mapped[str | None] = mapped_column(String(255), index=True)
-    address: Mapped[str | None] = mapped_column(String(500))
+    phone: Mapped[str | None] = mapped_column(String(50))
+    country: Mapped[str | None] = mapped_column(String(100))
     city: Mapped[str | None] = mapped_column(String(100))
+    address: Mapped[str | None] = mapped_column(String(500))
     postal_code: Mapped[str | None] = mapped_column(String(20))
+    pickup_point: Mapped[str | None] = mapped_column(String(500))
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

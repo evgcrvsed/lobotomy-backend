@@ -66,10 +66,14 @@ class OrderService:
             raise OrderError(f"Способ доставки «{data.delivery_method}» недоступен")
         delivery_price = delivery.price
 
+        # У авторизованного почта берётся из профиля, а не из формы: она подтверждена
+        # входом. Иначе можно было бы оформить заказ на чужой адрес.
+        email = (user.email or str(data.email)).lower() if user else str(data.email).lower()
+
         order = Order(
             number=await self._unique_number(),
             user_id=user.id if user else None,
-            email=str(data.email).lower(),
+            email=email,
             full_name=data.full_name,
             phone=data.phone,
             delivery_method=data.delivery_method,
@@ -86,6 +90,18 @@ class OrderService:
             items=items,
         )
         self.db.add(order)
+
+        # Данные доставки запоминаем в профиле — чтобы в следующий раз подставились.
+        # Почту НЕ трогаем: она подтверждена входом и менять её через заказ нельзя.
+        if user is not None:
+            user.full_name = data.full_name or user.full_name
+            user.phone = data.phone or user.phone
+            user.country = data.country or user.country
+            user.city = data.city or user.city
+            user.address = data.address or user.address
+            user.postal_code = data.postal_code or user.postal_code
+            user.pickup_point = data.pickup_point or user.pickup_point
+
         await self.db.commit()
         await self.db.refresh(order, attribute_names=["items"])
         return order

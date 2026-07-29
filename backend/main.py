@@ -73,6 +73,12 @@ async def lifespan(app: FastAPI):
             text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE")
         )
         await conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS ip VARCHAR(64)"))
+        for col, ddl in (
+            ("phone", "VARCHAR(50)"),
+            ("country", "VARCHAR(100)"),
+            ("pickup_point", "VARCHAR(500)"),
+        ):
+            await conn.execute(text(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col} {ddl}"))
     await _seed_delivery_methods()
     await _backfill_product_slugs()
     yield
