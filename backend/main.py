@@ -113,6 +113,7 @@ async def lifespan(app: FastAPI):
             ("cdek_status_name", "VARCHAR(200)"),
             ("cdek_status_at", "TIMESTAMPTZ"),
             ("cdek_checked_at", "TIMESTAMPTZ"),
+            ("confirmation_sent_at", "TIMESTAMPTZ"),
         ):
             await conn.execute(text(f"ALTER TABLE orders ADD COLUMN IF NOT EXISTS {col} {ddl}"))
     await _seed_delivery_methods()

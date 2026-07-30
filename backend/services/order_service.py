@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 from backend.config import settings
 from backend.models import DeliveryMethod, Order, OrderItem, Product, User
 from backend.schemas.order import OrderCreate
+from backend.services.order_email import send_order_confirmation
 
 
 class OrderError(Exception):
@@ -141,6 +142,28 @@ class OrderService:
         order.paid_at = datetime.now(timezone.utc)
         if payment_id:
             order.tinkoff_payment_id = payment_id
+        await self.db.commit()
+        return True
+
+    async def send_confirmation(self, order: Order) -> bool:
+        """Письмо покупателю с номером заказа. Возвращает True, если отправили.
+
+        Отметка о письме в БД, а не просто «раз оплатили — шлём»: Т-Банк
+        повторяет уведомление, и без отметки покупатель получил бы несколько
+        одинаковых писем. Если письмо не ушло, отметка не ставится — повторное
+        уведомление попробует ещё раз.
+        """
+        if order.confirmation_sent_at is not None:
+            return False
+
+        method = await self.db.execute(
+            select(DeliveryMethod).where(DeliveryMethod.code == order.delivery_method)
+        )
+        delivery = method.scalar_one_or_none()
+        label = delivery.label if delivery else order.delivery_method
+
+        await send_order_confirmation(order, label)
+        order.confirmation_sent_at = datetime.now(timezone.utc)
         await self.db.commit()
         return True
 

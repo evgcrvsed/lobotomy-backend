@@ -47,8 +47,11 @@ async def init_payment(*, order_number: str, amount_rub: int, email: str, descri
         "OrderId": order_number,
         "Description": description,
         "NotificationURL": f"{settings.site_url}/api/payments/tinkoff/webhook",
-        "SuccessURL": f"{settings.site_url}/checkout/success",
-        "FailURL": f"{settings.site_url}/checkout/fail",
+        # Номер заказа — в пути, а не в query: Т-Банк дописывает к этим адресам
+        # свои параметры (?Success=...), и наш ?order=... с ними бы столкнулся.
+        # Без номера гость после оплаты не смог бы найти свой заказ.
+        "SuccessURL": f"{settings.site_url}/checkout/success/{order_number}",
+        "FailURL": f"{settings.site_url}/checkout/fail/{order_number}",
     }
     payload["Token"] = make_token(payload)
     payload["DATA"] = {"Email": email}  # объект — в подпись не входит

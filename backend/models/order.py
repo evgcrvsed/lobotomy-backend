@@ -48,6 +48,9 @@ class Order(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Когда отправили письмо с номером заказа. Пусто — ещё не отправляли:
+    # Т-Банк повторяет уведомление, и без этой отметки письмо ушло бы несколько раз
+    confirmation_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     items: Mapped[list["OrderItem"]] = relationship(
         back_populates="order", cascade="all, delete-orphan"

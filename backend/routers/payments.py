@@ -17,6 +17,7 @@ from backend.schemas.order import (
 from backend.services.auth_service import client_ip, get_current_admin, get_current_user, get_optional_user
 from backend.services.cdek_service import CdekError
 from backend.services.cdek_sync import sync_order
+from backend.services.email_service import EmailNotConfiguredError, EmailSendError
 from backend.services.order_service import OrderError, OrderService
 from backend.services.tinkoff_service import TinkoffError, init_payment, verify_notification
 
@@ -87,14 +88,25 @@ async def tinkoff_webhook(request: Request, db: DbDep):
     # CONFIRMED — оплата прошла (одностадийная схема)
     if payload.get("Status") == "CONFIRMED":
         amount = payload.get("Amount")
-        ok = await OrderService(db).mark_paid(
-            number=str(payload.get("OrderId")),
+        number = str(payload.get("OrderId"))
+        service = OrderService(db)
+        ok = await service.mark_paid(
+            number=number,
             payment_id=str(payload.get("PaymentId")) if payload.get("PaymentId") else None,
             amount_kopecks=int(amount) if amount is not None else None,
         )
         if not ok:
             # заказ не найден или сумма разошлась — в логи, разбирать вручную
-            print(f"[webhook] не удалось подтвердить заказ {payload.get('OrderId')}, сумма {amount}")
+            print(f"[webhook] не удалось подтвердить заказ {number}, сумма {amount}")
+        else:
+            # Письмо с номером заказа. Ошибка почты не должна валить обработку:
+            # иначе Т-Банк не увидит "OK" и будет слать уведомление снова.
+            try:
+                order = await service.get_by_number(number)
+                if order is not None and await service.send_confirmation(order):
+                    print(f"[webhook] письмо о заказе {number} отправлено на {order.email}")
+            except (EmailNotConfiguredError, EmailSendError) as e:
+                print(f"[webhook] заказ {number} оплачен, но письмо не ушло: {e}")
     # Т-Банк ждёт именно тело "OK", иначе будет повторять уведомление
     return PlainTextResponse("OK")
 

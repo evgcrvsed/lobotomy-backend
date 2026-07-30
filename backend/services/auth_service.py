@@ -13,22 +13,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.config import settings
 from backend.database import get_db
 from backend.models import User
+# Классы ошибок остаются доступны отсюда: на них ссылается роутер авторизации
+from backend.services.email_service import EmailNotConfiguredError, EmailSendError, send_email
 
 _bearer = HTTPBearer(auto_error=False)
 
 VK_USER_INFO_URL = "https://id.vk.ru/oauth2/user_info"
-RESEND_API_URL = "https://api.resend.com/emails"
 
 
 class VkAuthError(Exception):
-    pass
-
-
-class EmailNotConfiguredError(Exception):
-    pass
-
-
-class EmailSendError(Exception):
     pass
 
 
@@ -53,9 +46,6 @@ def hash_login_code(email: str, code: str) -> str:
 
 
 async def send_login_code_email(email: str, code: str) -> None:
-    if not settings.resend_api_key:
-        raise EmailNotConfiguredError("Разраб даун забыл задать RESEND_API_URL пиздец работничек")
-
     html = (
         "<div style=\"font-family:sans-serif;font-size:15px;color:#111\">"
         "<p>Ваш код для входа в <strong>LOBOTOMY</strong>:</p>"
@@ -63,14 +53,7 @@ async def send_login_code_email(email: str, code: str) -> None:
         "<p style=\"color:#888;font-size:13px\">Если вы не запрашивали вход — просто проигнорируйте письмо.</p>"
         "</div>"
     )
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.post(
-            RESEND_API_URL,
-            headers={"Authorization": f"Bearer {settings.resend_api_key}"},
-            json={"from": settings.email_from, "to": [email], "subject": "Код для входа — LOBOTOMY", "html": html},
-        )
-    if resp.status_code >= 300:
-        raise EmailSendError(f"Resend вернул {resp.status_code}: {resp.text[:200]}")
+    await send_email(email, "Код для входа — LOBOTOMY", html)
 
 
 def create_token(user_id: int) -> str:
