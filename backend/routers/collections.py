@@ -34,7 +34,9 @@ async def create_collection(data: CollectionCreate, db: DbDep):
 @router.put("/{collection_id}", response_model=CollectionResponse, dependencies=admin_only)
 async def update_collection(collection_id: int, data: CollectionUpdate, db: DbDep):
     try:
-        collection = await CollectionService(db).update(collection_id, data.name.strip(), data.image)
+        collection = await CollectionService(db).update(
+            collection_id, data.name.strip(), data.image, data.is_hero
+        )
     except CollectionNameTakenError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     if collection is None:

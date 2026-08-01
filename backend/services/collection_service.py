@@ -1,4 +1,4 @@
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models import Collection, Product
@@ -52,7 +52,13 @@ class CollectionService:
         await self.db.refresh(collection)
         return collection
 
-    async def update(self, collection_id: int, name: str, image: str | None) -> Collection | None:
+    async def update(
+        self,
+        collection_id: int,
+        name: str,
+        image: str | None,
+        is_hero: bool | None = None,
+    ) -> Collection | None:
         collection = await self.db.get(Collection, collection_id)
         if collection is None:
             return None
@@ -62,6 +68,17 @@ class CollectionService:
         collection.name = name
         collection.slug = await self._unique_slug(name, exclude_id=collection_id)
         collection.image = image
+
+        # is_hero=None означает «не менять»: так переименование и смена картинки
+        # не сбрасывают выбор главной картинки главной страницы
+        if is_hero is not None:
+            if is_hero:
+                # Главная картинка всегда одна — снимаем флаг со всех остальных
+                await self.db.execute(
+                    update(Collection).where(Collection.id != collection_id).values(is_hero=False)
+                )
+            collection.is_hero = is_hero
+
         await self.db.commit()
         await self.db.refresh(collection)
         return collection

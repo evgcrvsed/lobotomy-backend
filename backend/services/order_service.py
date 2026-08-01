@@ -159,10 +159,9 @@ class OrderService:
         method = await self.db.execute(
             select(DeliveryMethod).where(DeliveryMethod.code == order.delivery_method)
         )
-        delivery = method.scalar_one_or_none()
-        label = delivery.label if delivery else order.delivery_method
-
-        await send_order_confirmation(order, label)
+        # передаём способ целиком: из него берутся и название, и подписи полей
+        # адреса («Индекс СДЭК», «Адрес пункта СДЭК») — как на сайте
+        await send_order_confirmation(order, method.scalar_one_or_none())
         order.confirmation_sent_at = datetime.now(timezone.utc)
         await self.db.commit()
         return True
