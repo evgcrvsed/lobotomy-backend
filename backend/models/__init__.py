@@ -7,6 +7,7 @@ from backend.models.order import Order, OrderItem
 from backend.models.product import Product
 from backend.models.product_image import ProductImage
 from backend.models.product_size import ProductSize
+from backend.models.site_setting import SiteSetting
 from backend.models.user import User
 
 __all__ = [
@@ -20,5 +21,6 @@ __all__ = [
     "Product",
     "ProductImage",
     "ProductSize",
+    "SiteSetting",
     "User",
 ]

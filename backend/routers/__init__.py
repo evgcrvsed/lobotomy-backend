@@ -3,6 +3,7 @@ from backend.routers.collections import router as CollectionsRouter
 from backend.routers.delivery import router as DeliveryRouter
 from backend.routers.payments import router as PaymentsRouter
 from backend.routers.products import router as ProductsRouter
+from backend.routers.settings import router as SettingsRouter
 from backend.routers.uploads import router as UploadsRouter
 
 __all__ = [
@@ -11,5 +12,6 @@ __all__ = [
     "DeliveryRouter",
     "PaymentsRouter",
     "ProductsRouter",
+    "SettingsRouter",
     "UploadsRouter",
 ]

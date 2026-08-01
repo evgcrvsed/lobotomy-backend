@@ -15,6 +15,7 @@ from backend.routers import (
     DeliveryRouter,
     PaymentsRouter,
     ProductsRouter,
+    SettingsRouter,
     UploadsRouter,
 )
 from backend.services import slugify
@@ -154,3 +155,4 @@ app.include_router(UploadsRouter)
 app.include_router(AuthRouter)
 app.include_router(PaymentsRouter)
 app.include_router(DeliveryRouter)
+app.include_router(SettingsRouter)
