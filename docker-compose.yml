@@ -37,9 +37,6 @@ services:
       EMAIL_FROM: ${EMAIL_FROM:-onboarding@resend.dev}
       # Отдельный адрес для писем о заказах — чтобы не приходили от auth@
       EMAIL_FROM_ORDERS: ${EMAIL_FROM_ORDERS:-orders@lobo1omy.store}
-      # Telegram — уведомления админу об оплатах. Пусто — просто не шлются.
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_ADMIN_CHAT_ID: ${TELEGRAM_ADMIN_CHAT_ID:-}
       # Оплата (Т-Банк)
       TINKOFF_TERMINAL_KEY: ${TINKOFF_TERMINAL_KEY:-}
       TINKOFF_PASSWORD: ${TINKOFF_PASSWORD:-}
