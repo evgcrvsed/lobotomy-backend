@@ -18,6 +18,7 @@ from backend.services.auth_service import client_ip, get_current_admin, get_curr
 from backend.services.cdek_service import CdekError
 from backend.services.cdek_sync import sync_order
 from backend.services.email_service import EmailNotConfiguredError, EmailSendError
+from backend.services.order_notify import notify_paid_order
 from backend.services.order_service import OrderError, OrderService
 from backend.services.tinkoff_service import TinkoffError, init_payment, verify_notification
 
@@ -85,23 +86,35 @@ async def tinkoff_webhook(request: Request, db: DbDep):
         amount = payload.get("Amount")
         number = str(payload.get("OrderId"))
         service = OrderService(db)
-        ok = await service.mark_paid(
+        result = await service.mark_paid(
             number=number,
             payment_id=str(payload.get("PaymentId")) if payload.get("PaymentId") else None,
             amount_kopecks=int(amount) if amount is not None else None,
         )
-        if not ok:
+        if result is None:
             # заказ не найден или сумма разошлась — в логи, разбирать вручную
             print(f"[webhook] не удалось подтвердить заказ {number}, сумма {amount}")
         else:
-            # Письмо с номером заказа. Ошибка почты не должна валить обработку:
-            # иначе Т-Банк не увидит "OK" и будет слать уведомление снова.
-            try:
-                order = await service.get_by_number(number)
-                if order is not None and await service.send_confirmation(order):
-                    print(f"[webhook] письмо о заказе {number} отправлено на {order.email}")
-            except (EmailNotConfiguredError, EmailSendError) as e:
-                print(f"[webhook] заказ {number} оплачен, но письмо не ушло: {e}")
+            order = await service.get_by_number(number)
+            if order is not None:
+                # Уведомление админу — только в момент самой оплаты. Своей
+                # отметки в БД у него нет, поэтому на повторах (result ==
+                # "already") не шлём, иначе чат завалит дублями.
+                # Уходит в фоне и молча: вебхук не ждёт телеграм, а его
+                # недоступность ничего не ломает.
+                if result == "paid":
+                    notify_paid_order(order, await service.delivery_method_of(order))
+
+                # Письмо, наоборот, пробуем и на повторах: у него есть отметка
+                # confirmation_sent_at, дубля не будет, зато если в первый раз
+                # почта лежала — повтор от Т-Банка станет второй попыткой.
+                # Ошибка почты не должна валить обработку: иначе Т-Банк
+                # не увидит "OK" и будет слать уведомление снова.
+                try:
+                    if await service.send_confirmation(order):
+                        print(f"[webhook] письмо о заказе {number} отправлено на {order.email}")
+                except (EmailNotConfiguredError, EmailSendError) as e:
+                    print(f"[webhook] заказ {number} оплачен, но письмо не ушло: {e}")
     # Т-Банк ждёт именно тело "OK", иначе будет повторять уведомление
     return PlainTextResponse("OK")
 

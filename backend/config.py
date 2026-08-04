@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     jwt_secret: str = "dev-secret-change-me-to-long-random-string"  # на сервере задать своё через переменную окружения
     jwt_ttl_days: int = 30
 
+    # Telegram — служебные уведомления админу (новая оплата и т.п.).
+    # Пусто — уведомления просто не шлются, на работу магазина не влияет.
+    telegram_bot_token: str = ""
+    # Строкой, а не числом: у групп id вида -1001234567890
+    telegram_admin_chat_id: str = ""
+
     # Email (Resend) — вход по одноразовому коду на почту
     resend_api_key: str = ""  # пусто — отправка почты выключена
     email_from: str = "noreply@lobo1omy.store"  # адрес отправителя; для реальных писем нужен свой домен

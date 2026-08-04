@@ -124,26 +124,44 @@ class OrderService:
         )
         return result.scalar_one_or_none()
 
-    async def mark_paid(self, number: str, payment_id: str | None, amount_kopecks: int | None = None) -> bool:
-        """Помечает заказ оплаченным. Возвращает False, если заказа нет
-        или пришедшая сумма не совпала с суммой заказа."""
+    async def mark_paid(
+        self, number: str, payment_id: str | None, amount_kopecks: int | None = None
+    ) -> str | None:
+        """Помечает заказ оплаченным. Что возвращает:
+
+        · "paid"    — заказ только что стал оплаченным (это первый раз);
+        · "already" — уже был оплачен, это повторное уведомление Т-Банка;
+        · None      — заказа нет или сумма не совпала.
+
+        Различать «только что» и «уже» важно: Т-Банк повторяет уведомления,
+        а на факт оплаты навешены разовые действия (письмо покупателю,
+        уведомление админу) — их нельзя выполнять на каждый повтор.
+        """
         order = await self.get_by_number(number)
         if order is None:
-            return False
+            return None
         # Повторное уведомление — ничего не меняем. Проверять сумму тут нельзя:
         # админ мог дозаказать позицию, и total уже отличается от оплаченного.
         if order.status in ("paid", "shipped"):
-            return True
+            return "already"
         # сверяем сумму: она пришла подписанной от банка, но лучше убедиться,
         # что оплатили именно столько, сколько стоит заказ
         if amount_kopecks is not None and amount_kopecks != order.total * 100:
-            return False
+            return None
         order.status = "paid"
         order.paid_at = datetime.now(timezone.utc)
         if payment_id:
             order.tinkoff_payment_id = payment_id
         await self.db.commit()
-        return True
+        return "paid"
+
+    async def delivery_method_of(self, order: Order) -> DeliveryMethod | None:
+        """Способ доставки заказа целиком — из него берутся и название,
+        и подписи полей адреса («Индекс СДЭК», «Адрес пункта СДЭК»)."""
+        result = await self.db.execute(
+            select(DeliveryMethod).where(DeliveryMethod.code == order.delivery_method)
+        )
+        return result.scalar_one_or_none()
 
     async def send_confirmation(self, order: Order) -> bool:
         """Письмо покупателю с номером заказа. Возвращает True, если отправили.
@@ -156,12 +174,7 @@ class OrderService:
         if order.confirmation_sent_at is not None:
             return False
 
-        method = await self.db.execute(
-            select(DeliveryMethod).where(DeliveryMethod.code == order.delivery_method)
-        )
-        # передаём способ целиком: из него берутся и название, и подписи полей
-        # адреса («Индекс СДЭК», «Адрес пункта СДЭК») — как на сайте
-        await send_order_confirmation(order, method.scalar_one_or_none())
+        await send_order_confirmation(order, await self.delivery_method_of(order))
         order.confirmation_sent_at = datetime.now(timezone.utc)
         await self.db.commit()
         return True
