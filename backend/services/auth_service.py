@@ -53,7 +53,12 @@ async def send_login_code_email(email: str, code: str) -> None:
         "<p style=\"color:#888;font-size:13px\">Если вы не запрашивали вход — просто проигнорируйте письмо.</p>"
         "</div>"
     )
-    await send_email(email, "Код для входа — LOBOTOMY", html)
+    await send_email(
+        to=email,
+        subject="Код для входа — LOBOTOMY",
+        html=html,
+        from_address=f'"LOBOTOMY" <{settings.email_from}>',
+    )
 
 
 def create_token(user_id: int) -> str:

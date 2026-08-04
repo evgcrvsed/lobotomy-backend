@@ -35,6 +35,8 @@ services:
       # Вход по коду на почту (Resend)
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       EMAIL_FROM: ${EMAIL_FROM:-onboarding@resend.dev}
+      # Отдельный адрес для писем о заказах — чтобы не приходили от auth@
+      EMAIL_FROM_ORDERS: ${EMAIL_FROM_ORDERS:-orders@lobo1omy.store}
       # Оплата (Т-Банк)
       TINKOFF_TERMINAL_KEY: ${TINKOFF_TERMINAL_KEY:-}
       TINKOFF_PASSWORD: ${TINKOFF_PASSWORD:-}

@@ -138,7 +138,8 @@ def build_html(order: Order, delivery: DeliveryMethod | None) -> str:
 
 async def send_order_confirmation(order: Order, delivery: DeliveryMethod | None) -> None:
     await send_email(
-        order.email,
-        f"Заказ {order.number} оплачен — LOBOTOMY",
-        build_html(order, delivery),
+        to=order.email,
+        subject=f"Заказ {order.number} оплачен — LOBOTOMY",
+        html=build_html(order, delivery),
+        from_address=f'"LOBOTOMY" <{settings.email_from_orders}>',
     )
