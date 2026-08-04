@@ -39,7 +39,7 @@ services:
       TINKOFF_TERMINAL_KEY: ${TINKOFF_TERMINAL_KEY:-}
       TINKOFF_PASSWORD: ${TINKOFF_PASSWORD:-}
       # Система налогообложения и НДС для фискального чека — сверить с бухгалтером
-      TINKOFF_RECEIPT_TAXATION: ${TINKOFF_RECEIPT_TAXATION:-usn_income}
+      TINKOFF_RECEIPT_TAXATION: ${TINKOFF_RECEIPT_TAXATION:-patent}
       TINKOFF_RECEIPT_VAT: ${TINKOFF_RECEIPT_VAT:-none}
       SITE_URL: ${SITE_URL:-https://lobo1omy.store}
       # СДЭК — автообновление статусов заказов по трек-номеру
