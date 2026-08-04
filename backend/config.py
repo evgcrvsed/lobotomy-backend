@@ -44,7 +44,20 @@ class Settings(BaseSettings):
     tinkoff_terminal_key: str = ""  # пусто — оплата выключена
     tinkoff_password: str = ""
     tinkoff_api_url: str = "https://securepay.tinkoff.ru/v2"
-    tinkoff_send_receipt: bool = False  # слать фискальный чек (включить на боевом терминале с фискализацией)
+    # Фискальный чек (54-ФЗ): боевой терминал отклоняет Init без него
+    # (ErrorCode 309, "expected.receipt") — проверено на реальном терминале.
+    # Тестовый терминал тоже принимает чек нормально, поэтому шлём его всегда,
+    # без развилки demo/боевой.
+    #
+    # !!! ЗНАЧЕНИЯ НИЖЕ НАДО СВЕРИТЬ С БУХГАЛТЕРОМ / ЛИЧНЫМ КАБИНЕТОМ Т-БАНКА —
+    # это система налогообложения и ставка НДС конкретного ИП, я не могу их
+    # угадать правильно. Неверное значение — это неверный фискальный чек.
+    # usn_income — большинство ИП на УСН «доходы»; другие варианты:
+    # osn, usn_income_outcome, envd, esn, patent
+    tinkoff_receipt_taxation: str = "usn_income"
+    # none — для большинства ИП на УСН (НДС не платится); варианты:
+    # vat0, vat10, vat20, vat110, vat120 — если ИП на ОСН/платит НДС
+    tinkoff_receipt_vat: str = "none"
     site_url: str = "https://lobo1omy.store"  # база для webhook/success/fail и писем
 
     # СДЭК — автообновление статуса по трек-номеру.

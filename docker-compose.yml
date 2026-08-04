@@ -38,7 +38,9 @@ services:
       # Оплата (Т-Банк)
       TINKOFF_TERMINAL_KEY: ${TINKOFF_TERMINAL_KEY:-}
       TINKOFF_PASSWORD: ${TINKOFF_PASSWORD:-}
-      TINKOFF_SEND_RECEIPT: ${TINKOFF_SEND_RECEIPT:-false}
+      # Система налогообложения и НДС для фискального чека — сверить с бухгалтером
+      TINKOFF_RECEIPT_TAXATION: ${TINKOFF_RECEIPT_TAXATION:-usn_income}
+      TINKOFF_RECEIPT_VAT: ${TINKOFF_RECEIPT_VAT:-none}
       SITE_URL: ${SITE_URL:-https://lobo1omy.store}
       # СДЭК — автообновление статусов заказов по трек-номеру
       CDEK_CLIENT_ID: ${CDEK_CLIENT_ID:-}

@@ -41,12 +41,7 @@ async def create_order(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     try:
-        payment = await init_payment(
-            order_number=order.number,
-            amount_rub=order.total,
-            email=order.email,
-            description=f"Заказ {order.number}",
-        )
+        payment = await init_payment(order=order, description=f"Заказ {order.number}")
     except TinkoffError as e:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
 
@@ -70,12 +65,7 @@ async def resume_payment(number: str, db: DbDep):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Заказ уже оплачен")
 
     try:
-        payment = await init_payment(
-            order_number=order.number,
-            amount_rub=order.total,
-            email=order.email,
-            description=f"Заказ {order.number}",
-        )
+        payment = await init_payment(order=order, description=f"Заказ {order.number}")
     except TinkoffError as e:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
 
