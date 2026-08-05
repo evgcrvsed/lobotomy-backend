@@ -12,13 +12,12 @@ from backend.models import Collection, Product, ProductImage
 from backend.services.auth_service import get_current_admin
 from backend.services.image_service import compress_image
 
-# весь роутер загрузок — только для админов (публичного доступа тут нет)
 router = APIRouter(prefix="/api/uploads", tags=["uploads"], dependencies=[Depends(get_current_admin)])
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
-# Входной файл может быть большим — после сжатия на диск ляжет в разы меньше
+# на диск после сжатия ляжет в разы меньше
 MAX_SIZE = 20 * 1024 * 1024  # 20 МБ
 
 

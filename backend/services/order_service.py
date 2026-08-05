@@ -134,8 +134,7 @@ class OrderService:
         # админ мог дозаказать позицию, и total уже отличается от оплаченного.
         if order.status in ("paid", "shipped"):
             return True
-        # сверяем сумму: она пришла подписанной от банка, но лучше убедиться,
-        # что оплатили именно столько, сколько стоит заказ
+        # сумма пришла подписанной от банка, но лучше убедиться
         if amount_kopecks is not None and amount_kopecks != order.total * 100:
             return False
         order.status = "paid"
@@ -159,8 +158,7 @@ class OrderService:
         method = await self.db.execute(
             select(DeliveryMethod).where(DeliveryMethod.code == order.delivery_method)
         )
-        # передаём способ целиком: из него берутся и название, и подписи полей
-        # адреса («Индекс СДЭК», «Адрес пункта СДЭК») — как на сайте
+        # способ целиком: из него берутся и название, и подписи полей адреса
         await send_order_confirmation(order, method.scalar_one_or_none())
         order.confirmation_sent_at = datetime.now(timezone.utc)
         await self.db.commit()
@@ -180,7 +178,6 @@ class OrderService:
             return None
         changed = order.tracking_number != (tracking or None)
         order.tracking_number = tracking or None
-        # появился трек у оплаченного заказа — считаем его отправленным
         if order.tracking_number and order.status == "paid":
             order.status = "shipped"
         elif not order.tracking_number:

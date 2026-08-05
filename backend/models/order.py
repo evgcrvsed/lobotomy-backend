@@ -17,7 +17,6 @@ class Order(Base):
     # Пусто = гостевой заказ. При входе с той же почтой заказ «прилипает» к пользователю.
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
 
-    # Контакты и доставка
     email: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
     full_name: Mapped[str | None] = mapped_column(String(255))
     phone: Mapped[str | None] = mapped_column(String(50))
@@ -28,7 +27,7 @@ class Order(Base):
     postal_code: Mapped[str | None] = mapped_column(String(20))
     pickup_point: Mapped[str | None] = mapped_column(String(500))
 
-    # Суммы (в рублях)
+    # рубли, не копейки
     items_total: Mapped[int] = mapped_column(nullable=False)
     delivery_price: Mapped[int] = mapped_column(nullable=False)
     total: Mapped[int] = mapped_column(nullable=False)
@@ -40,7 +39,6 @@ class Order(Base):
     tracking_number: Mapped[str | None] = mapped_column(String(100))  # админ впишет позже
     ip: Mapped[str | None] = mapped_column(String(64), index=True)  # для антиспама и разбора спорных заказов
 
-    # Данные СДЭК по трек-номеру
     cdek_status_code: Mapped[str | None] = mapped_column(String(50))
     cdek_status_name: Mapped[str | None] = mapped_column(String(200))  # человеческая подпись от СДЭК
     cdek_status_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # когда СДЭК его поставил
