@@ -130,7 +130,9 @@ async def sync_due_orders() -> dict:
     async with AsyncSessionLocal() as db:
         orders = await _due_orders(db)
         if not orders:
-            return {"checked": 0, "changed": 0}
+            # нечего проверять — но это не то же самое, что «опрос не работает»,
+            # поэтому в лог всё равно пишем (см. poll_forever)
+            return {"checked": 0, "changed": 0, "note": "нет заказов к проверке"}
 
         async with httpx.AsyncClient(timeout=25) as client:
             for i, order in enumerate(orders):
@@ -161,12 +163,22 @@ async def poll_forever() -> None:
         print("[cdek] автообновление статусов выключено (нет CDEK_CLIENT_ID)")
         return
 
-    print(f"[cdek] автообновление статусов включено, раз в {settings.cdek_poll_interval_minutes} мин")
+    print(
+        f"[cdek] автообновление статусов включено: проход раз в "
+        f"{settings.cdek_poll_interval_minutes} мин, один заказ не чаще раза "
+        f"в {settings.cdek_recheck_minutes} мин"
+    )
     while True:
         try:
             stats = await sync_due_orders()
-            if stats.get("checked"):
+            # Пишем в лог каждый проход, даже пустой: иначе по молчанию нельзя
+            # понять, опрос жив и делать нечего — или он вообще не работает.
+            if stats.get("skipped"):
+                print(f"[cdek] проход пропущен: {stats['skipped']}")
+            elif stats.get("checked"):
                 print(f"[cdek] проверено {stats['checked']}, обновлено {stats['changed']}")
+            else:
+                print(f"[cdek] {stats.get('note', 'проверять нечего')}")
         except asyncio.CancelledError:
             raise
         except Exception as e:  # цикл не должен умирать от разовой ошибки
