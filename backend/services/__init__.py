@@ -15,6 +15,7 @@ from backend.services.auth_service import (
 from backend.services.collection_service import CollectionNameTakenError, CollectionNotEmptyError, CollectionService
 from backend.services.image_service import compress_image, needs_compression
 from backend.services.order_service import OrderError, OrderService
+from backend.services.payment_log_service import PaymentLogService
 from backend.services.product_service import CollectionNotFoundError, ProductService
 from backend.services.slugs import slugify
 from backend.services.tinkoff_service import TinkoffError, init_payment, verify_notification
@@ -28,6 +29,7 @@ __all__ = [
     "EmailSendError",
     "OrderError",
     "OrderService",
+    "PaymentLogService",
     "ProductService",
     "TinkoffError",
     "VkAuthError",

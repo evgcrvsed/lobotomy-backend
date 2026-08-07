@@ -7,10 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
 from backend.models import User
+from backend.models import Order
 from backend.schemas.order import (
     OrderAdminUpdate,
     OrderCreate,
     OrderCreated,
+    OrderPaymentsResponse,
     OrderResponse,
     OrderTrackingUpdate,
 )
@@ -19,12 +21,43 @@ from backend.services.cdek_service import CdekError
 from backend.services.cdek_sync import sync_order
 from backend.services.email_service import EmailNotConfiguredError, EmailSendError
 from backend.services.order_service import OrderError, OrderService
+from backend.services.payment_log_service import PaymentLogService
 from backend.services.tinkoff_service import TinkoffError, init_payment, verify_notification
 
 router = APIRouter(prefix="/api", tags=["orders"])
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 admin_only = [Depends(get_current_admin)]
+
+
+async def _log_safely(db: AsyncSession, coro) -> None:
+    """Журнал оплаты не должен мешать самой оплате: упал — пишем в лог и живём дальше.
+
+    Откат обязателен: после ошибки сессия непригодна, и следующий запрос
+    (например, пометить заказ оплаченным) упал бы уже на ровном месте.
+    """
+    try:
+        await coro
+    except Exception as e:  # noqa: BLE001 — журнал не должен ронять оплату ничем
+        await db.rollback()
+        print(f"[payments] не удалось записать в журнал оплаты: {e}")
+
+
+async def _start_payment(db: AsyncSession, order: Order) -> dict:
+    """Создаёт платёж в Т-Банке и записывает попытку в журнал."""
+    log = PaymentLogService(db)
+    try:
+        payment = await init_payment(order=order, description=f"Заказ {order.number}")
+    except TinkoffError as e:
+        # отказ банка тоже в журнал: иначе о неудавшейся оплате не останется следа
+        await _log_safely(db, log.record_attempt(order, payment_id=None, error=str(e)))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
+
+    # в заказе — последняя попытка (ей платить), полная история в payment_attempts
+    order.tinkoff_payment_id = str(payment.get("PaymentId"))
+    await db.commit()
+    await _log_safely(db, log.record_attempt(order, payment_id=order.tinkoff_payment_id))
+    return payment
 
 
 @router.post("/orders", response_model=OrderCreated, status_code=status.HTTP_201_CREATED)
@@ -40,13 +73,7 @@ async def create_order(
     except OrderError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-    try:
-        payment = await init_payment(order=order, description=f"Заказ {order.number}")
-    except TinkoffError as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
-
-    order.tinkoff_payment_id = str(payment.get("PaymentId"))
-    await db.commit()
+    payment = await _start_payment(db, order)
     return {"number": order.number, "payment_url": payment["PaymentURL"]}
 
 
@@ -64,36 +91,63 @@ async def resume_payment(number: str, db: DbDep):
     if order.status != "pending":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Заказ уже оплачен")
 
-    try:
-        payment = await init_payment(order=order, description=f"Заказ {order.number}")
-    except TinkoffError as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
-
-    order.tinkoff_payment_id = str(payment.get("PaymentId"))
-    await db.commit()
+    payment = await _start_payment(db, order)
     return {"number": order.number, "payment_url": payment["PaymentURL"]}
 
 
 @router.post("/payments/tinkoff/webhook")
 async def tinkoff_webhook(request: Request, db: DbDep):
-    payload = await request.json()
+    ip = client_ip(request)
+    log = PaymentLogService(db)
+    service = OrderService(db)
+
+    try:
+        payload = await request.json()
+    except Exception:  # noqa: BLE001 — тело может быть каким угодно
+        payload = None
+    if not isinstance(payload, dict):
+        # разобрать нечего, но сам факт обращения фиксируем: пригодится,
+        # если кто-то будет ломиться на вебхук с мусором
+        await _log_safely(db, log.record_notification(
+            {}, signature_ok=False, order=None, accepted=False,
+            note="Тело уведомления не разобрать", ip=ip,
+        ))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bad payload")
+
+    number = str(payload["OrderId"]) if payload.get("OrderId") is not None else None
+    order = await service.get_by_number(number) if number else None
+
     if not verify_notification(payload):
+        await _log_safely(db, log.record_notification(
+            payload, signature_ok=False, order=order, accepted=False,
+            note="Подпись не сошлась", ip=ip,
+        ))
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bad signature")
 
     # CONFIRMED — оплата прошла (одностадийная схема)
     if payload.get("Status") == "CONFIRMED":
         amount = payload.get("Amount")
-        number = str(payload.get("OrderId"))
-        service = OrderService(db)
+        payment_id = str(payload["PaymentId"]) if payload.get("PaymentId") else None
         ok = await service.mark_paid(
             number=number,
-            payment_id=str(payload.get("PaymentId")) if payload.get("PaymentId") else None,
+            payment_id=payment_id,
             amount_kopecks=int(amount) if amount is not None else None,
         )
+        note = None
         if not ok:
-            # заказ не найден или сумма разошлась — в логи, разбирать вручную
-            print(f"[webhook] не удалось подтвердить заказ {number}, сумма {amount}")
-        else:
+            # заказ не найден или сумма разошлась — теперь причина остаётся в БД,
+            # а не только в логах контейнера, которые живут до пересоздания
+            note = (
+                "Заказ не найден"
+                if order is None
+                else f"Сумма не совпала: пришло {amount} коп., в заказе {order.total * 100} коп."
+            )
+            print(f"[webhook] не удалось подтвердить заказ {number}: {note}")
+        await _log_safely(db, log.record_notification(
+            payload, signature_ok=True, order=order, accepted=ok, note=note, ip=ip,
+        ))
+        if ok:
+            await _log_safely(db, log.confirm_attempt(payment_id))
             # Письмо с номером заказа. Пробуем и на повторных уведомлениях:
             # дубля не будет из-за отметки confirmation_sent_at, зато если
             # в первый раз почта лежала — повтор станет второй попыткой.
@@ -105,6 +159,13 @@ async def tinkoff_webhook(request: Request, db: DbDep):
                     print(f"[webhook] письмо о заказе {number} отправлено на {order.email}")
             except (EmailNotConfiguredError, EmailSendError) as e:
                 print(f"[webhook] заказ {number} оплачен, но письмо не ушло: {e}")
+    else:
+        # REJECTED, REFUNDED и прочее оплатой не считаем, но записываем:
+        # в споре важно видеть, что банк платёж отклонил, а не «ничего не приходило»
+        await _log_safely(db, log.record_notification(
+            payload, signature_ok=True, order=order, accepted=False,
+            note=f"Статус {payload.get('Status')} — не оплата", ip=ip,
+        ))
     # Т-Банк ждёт именно тело "OK", иначе будет повторять уведомление
     return PlainTextResponse("OK")
 
@@ -152,6 +213,25 @@ async def set_tracking(number: str, data: OrderTrackingUpdate, db: DbDep):
     if order is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Заказ не найден")
     return order
+
+
+@router.get("/orders/{number}/payments", response_model=OrderPaymentsResponse, dependencies=admin_only)
+async def order_payments(number: str, db: DbDep):
+    """Всё, что известно об оплате заказа — для ручной сверки с личным кабинетом банка."""
+    order = await OrderService(db).get_by_number(number)
+    if order is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Заказ не найден")
+
+    attempts, notifications = await PaymentLogService(db).for_order(order)
+    return {
+        "number": order.number,
+        "status": order.status,
+        "total": order.total,
+        "paid_at": order.paid_at,
+        "tinkoff_payment_id": order.tinkoff_payment_id,
+        "attempts": attempts,
+        "notifications": notifications,
+    }
 
 
 @router.post("/orders/{number}/cdek-sync", response_model=OrderResponse, dependencies=admin_only)

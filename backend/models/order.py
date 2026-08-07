@@ -53,6 +53,14 @@ class Order(Base):
     items: Mapped[list["OrderItem"]] = relationship(
         back_populates="order", cascade="all, delete-orphan"
     )
+    # Журнал оплаты: попытки (наши вызовы Init) и то, что банк прислал в ответ.
+    # tinkoff_payment_id выше — лишь последняя попытка, для разбора спора нужны все.
+    payment_attempts: Mapped[list["PaymentAttempt"]] = relationship(
+        back_populates="order", cascade="all, delete-orphan", order_by="PaymentAttempt.id"
+    )
+    payment_notifications: Mapped[list["PaymentNotification"]] = relationship(
+        back_populates="order", cascade="all, delete-orphan", order_by="PaymentNotification.id"
+    )
 
 
 class OrderItem(Base):

@@ -4,6 +4,7 @@ from backend.models.delivery_method import DeliveryMethod
 from backend.models.email_send_log import EmailSendLog
 from backend.models.login_code import LoginCode
 from backend.models.order import Order, OrderItem
+from backend.models.payment import PaymentAttempt, PaymentNotification
 from backend.models.product import Product
 from backend.models.product_image import ProductImage
 from backend.models.product_size import ProductSize
@@ -18,6 +19,8 @@ __all__ = [
     "LoginCode",
     "Order",
     "OrderItem",
+    "PaymentAttempt",
+    "PaymentNotification",
     "Product",
     "ProductImage",
     "ProductSize",

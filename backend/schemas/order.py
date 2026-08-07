@@ -65,6 +65,48 @@ class OrderCreated(BaseModel):
     payment_url: str
 
 
+class PaymentAttemptResponse(BaseModel):
+    """Наш вызов Init в Т-Банк. PaymentId ищется в личном кабинете банка."""
+
+    id: int
+    payment_id: str | None
+    amount: int
+    status: str
+    error: str | None
+    created_at: datetime
+    confirmed_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class PaymentNotificationResponse(BaseModel):
+    """Входящее уведомление банка. accepted=False + note — почему не засчитали."""
+
+    id: int
+    order_number: str | None
+    payment_id: str | None
+    status: str | None
+    amount_kopecks: int | None
+    signature_ok: bool
+    accepted: bool
+    note: str | None
+    ip: str | None
+    payload: dict
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class OrderPaymentsResponse(BaseModel):
+    number: str
+    status: str
+    total: int
+    paid_at: datetime | None
+    tinkoff_payment_id: str | None  # последняя попытка; полная история — в attempts
+    attempts: list[PaymentAttemptResponse]
+    notifications: list[PaymentNotificationResponse]
+
+
 class OrderTrackingUpdate(BaseModel):
     tracking_number: str | None = Field(default=None, max_length=100)
 

@@ -10,7 +10,7 @@ from sqlalchemy import select, text
 
 from backend.config import settings
 from backend.database import AsyncSessionLocal, engine
-from backend.models import Base, DeliveryMethod, Product, SiteSetting
+from backend.models import Base, DeliveryMethod, Order, PaymentAttempt, Product, SiteSetting
 from backend.routers import (
     AuthRouter,
     CollectionsRouter,
@@ -28,6 +28,7 @@ from backend.services.product_service import ProductService
 # Служебная отметка в site_settings: замеры уже переехали из колонок в JSON.
 # В админку не попадёт — SettingsService отдаёт только ключи из KNOWN_SETTINGS.
 SIZES_MIGRATED_FLAG = "sizes_migrated_to_json"
+PAYMENT_LOG_FLAG = "payment_log_started"
 
 
 async def _seed_delivery_methods() -> None:
@@ -158,6 +159,30 @@ async def _backfill_size_measurements() -> None:
         await session.commit()
 
 
+async def _backfill_payment_attempts() -> None:
+    """Заводит попытку оплаты для заказов, созданных до появления журнала.
+
+    Иначе у старых заказов карточка оплаты выглядела бы пустой, хотя PaymentId у них
+    есть. Дату попытки берём от заказа — точнее уже не восстановить.
+    """
+    async with AsyncSessionLocal() as session:
+        if await session.get(SiteSetting, PAYMENT_LOG_FLAG) is not None:
+            return
+
+        result = await session.execute(select(Order).where(Order.tinkoff_payment_id.is_not(None)))
+        for order in result.scalars():
+            session.add(PaymentAttempt(
+                order_id=order.id,
+                payment_id=order.tinkoff_payment_id,
+                amount=order.total,
+                status="confirmed" if order.paid_at is not None else "new",
+                created_at=order.created_at,
+                confirmed_at=order.paid_at,
+            ))
+        session.add(SiteSetting(key=PAYMENT_LOG_FLAG, value="1"))
+        await session.commit()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
@@ -203,6 +228,7 @@ async def lifespan(app: FastAPI):
     await _backfill_product_slugs()
     await _backfill_product_sort_order()
     await _backfill_size_measurements()
+    await _backfill_payment_attempts()
 
     # Фоновый опрос СДЭК: сам решает, кого и когда проверять
     cdek_task = asyncio.create_task(poll_forever())
