@@ -128,21 +128,37 @@ async def tinkoff_webhook(request: Request, db: DbDep):
     if payload.get("Status") == "CONFIRMED":
         amount = payload.get("Amount")
         payment_id = str(payload["PaymentId"]) if payload.get("PaymentId") else None
+        # до mark_paid: он идемпотентен и на уже оплаченном заказе вернёт True,
+        # не сверяя сумму, — без этой отметки повтор не отличить от первой оплаты
+        was_paid = order is not None and order.status in ("paid", "shipped")
+
         ok = await service.mark_paid(
             number=number,
             payment_id=payment_id,
             amount_kopecks=int(amount) if amount is not None else None,
         )
-        note = None
+
+        notes = []
         if not ok:
             # заказ не найден или сумма разошлась — теперь причина остаётся в БД,
             # а не только в логах контейнера, которые живут до пересоздания
-            note = (
+            notes.append(
                 "Заказ не найден"
                 if order is None
                 else f"Сумма не совпала: пришло {amount} коп., в заказе {order.total * 100} коп."
             )
-            print(f"[webhook] не удалось подтвердить заказ {number}: {note}")
+            print(f"[webhook] не удалось подтвердить заказ {number}: {notes[0]}")
+        elif was_paid:
+            notes.append("Повторное уведомление — заказ уже был оплачен")
+        # сверяем сумму всегда, даже когда заказ приняли: у оплаченного заказа
+        # mark_paid её не смотрит, и расхождение осталось бы незамеченным
+        if order is not None and amount is not None and str(amount).isdigit():
+            if int(amount) != order.total * 100:
+                notes.append(
+                    f"Сумма уведомления {int(amount) / 100:.2f} ₽ не сходится "
+                    f"с текущей суммой заказа {order.total} ₽"
+                )
+        note = "; ".join(notes) or None
         await _log_safely(db, log.record_notification(
             payload, signature_ok=True, order=order, accepted=ok, note=note, ip=ip,
         ))
