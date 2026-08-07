@@ -10,7 +10,7 @@ from sqlalchemy import select, text
 
 from backend.config import settings
 from backend.database import AsyncSessionLocal, engine
-from backend.models import Base, DeliveryMethod, Product
+from backend.models import Base, DeliveryMethod, Product, SiteSetting
 from backend.routers import (
     AuthRouter,
     CollectionsRouter,
@@ -23,6 +23,11 @@ from backend.routers import (
 from backend.services import slugify
 from backend.services.cdek_sync import poll_forever
 from backend.services.product_service import ProductService
+
+
+# Служебная отметка в site_settings: замеры уже переехали из колонок в JSON.
+# В админку не попадёт — SettingsService отдаёт только ключи из KNOWN_SETTINGS.
+SIZES_MIGRATED_FLAG = "sizes_migrated_to_json"
 
 
 async def _seed_delivery_methods() -> None:
@@ -95,12 +100,17 @@ async def _backfill_size_measurements() -> None:
 
     Раньше набор замеров был зашит в модель и был числовым; теперь названия столбцов
     задаются в админке для каждого товара, а значения — строки (туда пишут и «46-48»,
-    и «one size»). Числа переносим с «cm», как их раньше показывала карточка товара.
+    и «one size»). Числа переносим как есть: «cm» дописывает карточка товара.
 
-    Работает один раз на товар: те, у кого шапка сетки уже задана, не трогаем.
+    Работает ровно один раз: об этом говорит отметка в site_settings. Без неё пустая
+    шапка неотличима от «ещё не переносили», и столбцы, снесённые в админке, возвращались
+    бы из старых колонок при каждом перезапуске.
     """
     legacy = [("length", "Длина"), ("shoulder", "Плечо"), ("chest", "Грудь"), ("sleeve", "Рукав")]
     async with AsyncSessionLocal() as session:
+        if await session.get(SiteSetting, SIZES_MIGRATED_FLAG) is not None:
+            return
+
         # старые колонки мог уже удалить тот, кто убирал их руками после переноса
         present = await session.execute(text(
             "SELECT column_name FROM information_schema.columns "
@@ -108,42 +118,43 @@ async def _backfill_size_measurements() -> None:
             "AND column_name IN ('length', 'shoulder', 'chest', 'sleeve')"
         ))
         available = {row[0] for row in present}
-        if not available:
-            return
 
-        columns = ", ".join(f"s.{field}" for field, _ in legacy if field in available)
-        rows = await session.execute(text(
-            f"SELECT s.id, s.product_id, {columns} FROM product_sizes s "
-            "JOIN products p ON p.id = s.product_id WHERE p.size_columns = '[]'::jsonb"
-        ))
-        by_product = defaultdict(list)
-        for row in rows.mappings():
-            by_product[row["product_id"]].append(row)
-        if not by_product:
-            return
+        if available:
+            columns = ", ".join(f"s.{field}" for field, _ in legacy if field in available)
+            # только товары с пустой шапкой: у остальных сетку уже правили руками
+            rows = await session.execute(text(
+                f"SELECT s.id, s.product_id, {columns} FROM product_sizes s "
+                "JOIN products p ON p.id = s.product_id WHERE p.size_columns = '[]'::jsonb"
+            ))
+            by_product = defaultdict(list)
+            for row in rows.mappings():
+                by_product[row["product_id"]].append(row)
 
-        for product_id, sizes in by_product.items():
-            # столбец попадает в шапку, только если он заполнен хоть у одного размера
-            used = [
-                title for field, title in legacy
-                if field in available and any(size[field] is not None for size in sizes)
-            ]
-            if not used:
-                continue
-            await session.execute(
-                text("UPDATE products SET size_columns = CAST(:cols AS jsonb) WHERE id = :id"),
-                {"cols": json.dumps(used, ensure_ascii=False), "id": product_id},
-            )
-            for size in sizes:
-                measurements = {
-                    title: f"{size[field]}cm"
-                    for field, title in legacy
-                    if title in used and size[field] is not None
-                }
+            for product_id, sizes in by_product.items():
+                # столбец попадает в шапку, только если он заполнен хоть у одного размера
+                used = [
+                    title for field, title in legacy
+                    if field in available and any(size[field] is not None for size in sizes)
+                ]
+                if not used:
+                    continue
                 await session.execute(
-                    text("UPDATE product_sizes SET measurements = CAST(:m AS jsonb) WHERE id = :id"),
-                    {"m": json.dumps(measurements, ensure_ascii=False), "id": size["id"]},
+                    text("UPDATE products SET size_columns = CAST(:cols AS jsonb) WHERE id = :id"),
+                    {"cols": json.dumps(used, ensure_ascii=False), "id": product_id},
                 )
+                for size in sizes:
+                    measurements = {
+                        title: str(size[field])
+                        for field, title in legacy
+                        if title in used and size[field] is not None
+                    }
+                    await session.execute(
+                        text("UPDATE product_sizes SET measurements = CAST(:m AS jsonb) WHERE id = :id"),
+                        {"m": json.dumps(measurements, ensure_ascii=False), "id": size["id"]},
+                    )
+
+        # отметку ставим и когда переносить было нечего — чистой базе перенос не нужен
+        session.add(SiteSetting(key=SIZES_MIGRATED_FLAG, value="1"))
         await session.commit()
 
 
