@@ -66,14 +66,14 @@ class ProductService:
             n += 1
 
     def _add_sizes(self, product_id: int, data: ProductCreate) -> None:
+        columns = set(data.size_columns)
         for i, size in enumerate(data.sizes):
             self.db.add(ProductSize(
                 product_id=product_id,
                 label=size.label,
-                length=size.length,
-                shoulder=size.shoulder,
-                chest=size.chest,
-                sleeve=size.sleeve,
+                # столбец могли удалить в той же форме — замеры под ним не храним,
+                # иначе в базе накапливались бы ключи, которых нет в шапке
+                measurements={k: v for k, v in size.measurements.items() if k in columns},
                 sort_order=i + 1,
             ))
 
@@ -91,6 +91,7 @@ class ProductService:
             density=data.density,
             price=data.price,
             sort_order=data.sort_order if data.sort_order is not None else await self._next_sort_order(),
+            size_columns=data.size_columns,
         )
         self.db.add(product)
         await self.db.flush()
@@ -137,6 +138,7 @@ class ProductService:
         product.material = data.material
         product.density = data.density
         product.price = data.price
+        product.size_columns = data.size_columns
         if data.sort_order is not None:
             product.sort_order = data.sort_order
 

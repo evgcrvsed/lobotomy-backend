@@ -1,8 +1,14 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 ImageRole = Literal["main", "hover", "gallery", "sizechart"]
+
+# Ограничения на размерную сетку: чтобы форма админки не разъехалась
+# и в базу не уехал словарь произвольного размера
+MAX_SIZE_COLUMNS = 8
+MAX_COLUMN_NAME = 50
+MAX_MEASUREMENT = 50
 
 
 class ProductImageCreate(BaseModel):
@@ -22,19 +28,27 @@ class ProductImageResponse(BaseModel):
 
 class ProductSizeCreate(BaseModel):
     label: str = Field(..., min_length=1, max_length=10)
-    length: int | None = Field(default=None, ge=1, description="см")
-    shoulder: int | None = Field(default=None, ge=1, description="см")
-    chest: int | None = Field(default=None, ge=1, description="см")
-    sleeve: int | None = Field(default=None, ge=1, description="см")
+    # {название столбца: значение}; значение — строка, а не число: там пишут
+    # и «46-48», и «one size», и замер с единицами измерения
+    measurements: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("measurements")
+    @classmethod
+    def _clean_measurements(cls, value: dict[str, str]) -> dict[str, str]:
+        """Убирает пустые клетки — незаполненный замер просто не хранится."""
+        cleaned = {}
+        for name, measurement in value.items():
+            name = name.strip()[:MAX_COLUMN_NAME]
+            measurement = measurement.strip()[:MAX_MEASUREMENT]
+            if name and measurement:
+                cleaned[name] = measurement
+        return cleaned
 
 
 class ProductSizeResponse(BaseModel):
     id: int
     label: str
-    length: int | None
-    shoulder: int | None
-    chest: int | None
-    sleeve: int | None
+    measurements: dict[str, str]
 
     model_config = {"from_attributes": True}
 
@@ -50,7 +64,21 @@ class ProductCreate(BaseModel):
     # Порядок в каталоге. None — поставить в конец (текущий максимум + шаг)
     sort_order: int | None = Field(default=None, ge=0, le=100_000)
     images: list[ProductImageCreate] = Field(default_factory=list)
+    # Шапка размерной сетки — названия столбцов замеров в порядке показа
+    size_columns: list[str] = Field(default_factory=list)
     sizes: list[ProductSizeCreate] = Field(default_factory=list)
+
+    @field_validator("size_columns")
+    @classmethod
+    def _clean_columns(cls, value: list[str]) -> list[str]:
+        """Выбрасывает пустые названия и повторы: имя столбца — это ключ замера,
+        по двум одинаковым нельзя различить клетки."""
+        cleaned = []
+        for name in value:
+            name = name.strip()[:MAX_COLUMN_NAME]
+            if name and name not in cleaned:
+                cleaned.append(name)
+        return cleaned[:MAX_SIZE_COLUMNS]
 
 
 class ProductResponse(BaseModel):
@@ -64,6 +92,7 @@ class ProductResponse(BaseModel):
     price: int
     sort_order: int
     images: list[ProductImageResponse]
+    size_columns: list[str]
     sizes: list[ProductSizeResponse]
 
     model_config = {"from_attributes": True}

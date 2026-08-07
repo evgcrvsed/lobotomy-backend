@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from sqlalchemy import ForeignKey, Numeric, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.base import Base
@@ -21,6 +22,11 @@ class Product(Base):
     # Порядок в каталоге: меньше — выше. Новым товарам ставится с запасом
     # (шаг 10), чтобы товар можно было вставить между двумя, ничего не перенумеровывая.
     sort_order: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+    # Шапка размерной сетки: названия столбцов замеров в порядке показа. Своя у каждого
+    # товара — у брюк и футболки замеры называются по-разному. Задаётся в админке.
+    size_columns: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
 
     collection: Mapped["Collection"] = relationship(back_populates="products")
     images: Mapped[list["ProductImage"]] = relationship(

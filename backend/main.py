@@ -1,4 +1,6 @@
 import asyncio
+import json
+from collections import defaultdict
 from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
@@ -88,6 +90,63 @@ async def _backfill_product_sort_order() -> None:
         await session.commit()
 
 
+async def _backfill_size_measurements() -> None:
+    """Переносит замеры из колонок length/shoulder/chest/sleeve в JSON.
+
+    Раньше набор замеров был зашит в модель и был числовым; теперь названия столбцов
+    задаются в админке для каждого товара, а значения — строки (туда пишут и «46-48»,
+    и «one size»). Числа переносим с «cm», как их раньше показывала карточка товара.
+
+    Работает один раз на товар: те, у кого шапка сетки уже задана, не трогаем.
+    """
+    legacy = [("length", "Длина"), ("shoulder", "Плечо"), ("chest", "Грудь"), ("sleeve", "Рукав")]
+    async with AsyncSessionLocal() as session:
+        # старые колонки мог уже удалить тот, кто убирал их руками после переноса
+        present = await session.execute(text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'product_sizes' "
+            "AND column_name IN ('length', 'shoulder', 'chest', 'sleeve')"
+        ))
+        available = {row[0] for row in present}
+        if not available:
+            return
+
+        columns = ", ".join(f"s.{field}" for field, _ in legacy if field in available)
+        rows = await session.execute(text(
+            f"SELECT s.id, s.product_id, {columns} FROM product_sizes s "
+            "JOIN products p ON p.id = s.product_id WHERE p.size_columns = '[]'::jsonb"
+        ))
+        by_product = defaultdict(list)
+        for row in rows.mappings():
+            by_product[row["product_id"]].append(row)
+        if not by_product:
+            return
+
+        for product_id, sizes in by_product.items():
+            # столбец попадает в шапку, только если он заполнен хоть у одного размера
+            used = [
+                title for field, title in legacy
+                if field in available and any(size[field] is not None for size in sizes)
+            ]
+            if not used:
+                continue
+            await session.execute(
+                text("UPDATE products SET size_columns = CAST(:cols AS jsonb) WHERE id = :id"),
+                {"cols": json.dumps(used, ensure_ascii=False), "id": product_id},
+            )
+            for size in sizes:
+                measurements = {
+                    title: f"{size[field]}cm"
+                    for field, title in legacy
+                    if title in used and size[field] is not None
+                }
+                await session.execute(
+                    text("UPDATE product_sizes SET measurements = CAST(:m AS jsonb) WHERE id = :id"),
+                    {"m": json.dumps(measurements, ensure_ascii=False), "id": size["id"]},
+                )
+        await session.commit()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
@@ -106,6 +165,15 @@ async def lifespan(app: FastAPI):
             text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE")
         )
         await conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS ip VARCHAR(64)"))
+        # Размерная сетка: набор столбцов задаётся в админке, значения — свободный текст
+        await conn.execute(text(
+            "ALTER TABLE products ADD COLUMN IF NOT EXISTS size_columns JSONB NOT NULL DEFAULT '[]'::jsonb"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE product_sizes ADD COLUMN IF NOT EXISTS measurements JSONB NOT NULL DEFAULT '{}'::jsonb"
+        ))
+        # старые колонки замеров больше не нужны, но сносим их не здесь, а руками —
+        # после того, как _backfill_size_measurements перенесёт данные и сетка сойдётся
         for col, ddl in (
             ("phone", "VARCHAR(50)"),
             ("country", "VARCHAR(100)"),
@@ -123,6 +191,7 @@ async def lifespan(app: FastAPI):
     await _seed_delivery_methods()
     await _backfill_product_slugs()
     await _backfill_product_sort_order()
+    await _backfill_size_measurements()
 
     # Фоновый опрос СДЭК: сам решает, кого и когда проверять
     cdek_task = asyncio.create_task(poll_forever())
