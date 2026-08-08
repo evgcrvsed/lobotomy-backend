@@ -316,7 +316,10 @@ async def get_order(
     order = await OrderService(db).get_by_number(number)
     if order is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Заказ не найден")
-    # чужой привязанный заказ не отдаём; гостевой (user_id пустой) — публичный по номеру
-    if order.user_id is not None and (user is None or user.id != order.user_id):
+    # Чужой привязанный заказ не отдаём; гостевой (user_id пустой) — публичный по номеру.
+    # Админа пускаем к любому: карточку заказа в админке открывает этот же эндпоинт,
+    # а после входа покупателя заказ перестаёт быть гостевым (claim_guest_orders)
+    is_admin = user is not None and user.is_admin
+    if order.user_id is not None and not is_admin and (user is None or user.id != order.user_id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к этому заказу")
     return order
