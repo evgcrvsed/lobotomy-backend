@@ -19,7 +19,7 @@ from sqlalchemy import update
 
 from backend.config import settings
 from backend.database import AsyncSessionLocal
-from backend.models import ProductImage
+from backend.models import Collection, ProductImage
 from backend.services.image_service import compress_image, needs_compression
 
 EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -71,6 +71,11 @@ async def main() -> None:
                     update(ProductImage)
                     .where(ProductImage.filename == path.name)
                     .values(filename=new_name)
+                )
+                # у коллекции своя картинка, и она в отдельной таблице:
+                # без этого её ссылка осталась бы на файле, которого уже нет
+                await session.execute(
+                    update(Collection).where(Collection.image == path.name).values(image=new_name)
                 )
 
             total_before += len(content)
