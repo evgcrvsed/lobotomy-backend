@@ -206,9 +206,16 @@ async def my_orders(db: DbDep, user: Annotated[User, Depends(get_current_user)])
 
 
 @router.get("/orders", response_model=list[OrderResponse], dependencies=admin_only)
-async def all_orders(db: DbDep):
-    """Все заказы — для админской страницы."""
-    return await OrderService(db).list_all()
+async def all_orders(db: DbDep, search: str | None = None):
+    """Заказы для админской страницы.
+
+    Без поиска — только те, с которыми есть работа. Вручённые и отменённые
+    достаются поиском по номеру, ФИО, почте или телефону.
+    """
+    service = OrderService(db)
+    if search is not None and search.strip():
+        return await service.search(search)
+    return await service.list_active()
 
 
 @router.patch("/orders/{number}", response_model=OrderResponse, dependencies=admin_only)

@@ -1,7 +1,7 @@
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -13,6 +13,14 @@ from backend.services.order_email import send_order_confirmation
 
 class OrderError(Exception):
     pass
+
+
+# Статусы, которые ещё требуют внимания админа. Вручённые и отменённые —
+# архив: в списке их нет, но поиск их находит
+ACTIVE_STATUSES = ("pending", "paid", "shipped", "ready")
+SEARCH_LIMIT = 100
+# Короткий огрызок цифр («7») совпал бы с половиной телефонов — не ищем по нему
+MIN_PHONE_DIGITS = 3
 
 
 class OrderService:
@@ -164,11 +172,50 @@ class OrderService:
         await self.db.commit()
         return True
 
-    async def list_all(self) -> list[Order]:
-        """Все заказы — для админки (включая отменённые и неоплаченные)."""
+    async def list_active(self) -> list[Order]:
+        """Заказы, с которыми ещё есть работа.
+
+        Вручённые и отменённые в списке админки не нужны — они только мешают
+        видеть текущие. Найти их можно поиском: search() смотрит по всем статусам.
+        """
         await self._expire_stale_pending()
         result = await self.db.execute(
-            select(Order).options(selectinload(Order.items)).order_by(Order.created_at.desc())
+            select(Order)
+            .where(Order.status.in_(ACTIVE_STATUSES))
+            .options(selectinload(Order.items))
+            .order_by(Order.created_at.desc())
+        )
+        return list(result.scalars())
+
+    async def search(self, query: str) -> list[Order]:
+        """Поиск по номеру, ФИО, почте и телефону — по всем заказам, включая архивные."""
+        await self._expire_stale_pending()
+        text = query.strip()
+        if not text:
+            return []
+
+        like = f"%{text}%"
+        conditions = [
+            Order.number.ilike(like),
+            Order.full_name.ilike(like),
+            Order.email.ilike(like),
+            Order.phone.ilike(like),
+        ]
+
+        # Телефон в базе записан как его ввёл покупатель («+7 900 000-00-00»),
+        # а ищут обычно подряд идущими цифрами — сравниваем и по ним тоже
+        digits = "".join(ch for ch in text if ch.isdigit())
+        if len(digits) >= MIN_PHONE_DIGITS:
+            conditions.append(
+                func.regexp_replace(Order.phone, r"\D", "", "g").like(f"%{digits}%")
+            )
+
+        result = await self.db.execute(
+            select(Order)
+            .where(or_(*conditions))
+            .options(selectinload(Order.items))
+            .order_by(Order.created_at.desc())
+            .limit(SEARCH_LIMIT)
         )
         return list(result.scalars())
 
