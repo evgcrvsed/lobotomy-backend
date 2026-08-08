@@ -24,9 +24,11 @@ class PaymentAttempt(Base):
     payment_id: Mapped[str | None] = mapped_column(String(50), index=True)
     amount: Mapped[int] = mapped_column(nullable=False)  # рубли, сумма заказа на момент попытки
     # new — ссылка выдана, ждём оплату; confirmed — по этому платежу пришло CONFIRMED;
-    # failed — банк отклонил Init
+    # failed — банк отклонил Init; manual — админ отметил оплату мимо банка
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="new")
     error: Mapped[str | None] = mapped_column(Text)  # текст отказа Т-Банка
+    # комментарий админа к оплате вне банка («перевод на карту 07.08»)
+    note: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

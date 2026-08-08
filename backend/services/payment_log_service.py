@@ -36,6 +36,22 @@ class PaymentLogService:
         await self.db.commit()
         return attempt
 
+    async def record_manual(self, order: Order, note: str | None = None) -> None:
+        """Оплата мимо банка, подтверждённая админом.
+
+        В журнале она обязана быть видна: иначе заказ выглядит оплаченным
+        без единого уведомления от Т-Банка, и через месяц не вспомнить, почему.
+        """
+        self.db.add(PaymentAttempt(
+            order_id=order.id,
+            payment_id=None,
+            amount=order.total,
+            status="manual",
+            note=note or "Отмечено оплаченным вручную",
+            confirmed_at=datetime.now(timezone.utc),
+        ))
+        await self.db.commit()
+
     async def record_notification(
         self,
         payload: dict,

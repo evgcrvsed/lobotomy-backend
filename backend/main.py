@@ -208,6 +208,8 @@ async def lifespan(app: FastAPI):
         await conn.execute(text(
             "ALTER TABLE product_sizes ADD COLUMN IF NOT EXISTS measurements JSONB NOT NULL DEFAULT '{}'::jsonb"
         ))
+        # комментарий к оплате, отмеченной админом вручную (перевод на карту)
+        await conn.execute(text("ALTER TABLE payment_attempts ADD COLUMN IF NOT EXISTS note TEXT"))
         # старые колонки замеров больше не нужны, но сносим их не здесь, а руками —
         # после того, как _backfill_size_measurements перенесёт данные и сетка сойдётся
         for col, ddl in (

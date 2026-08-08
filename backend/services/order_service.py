@@ -219,6 +219,46 @@ class OrderService:
         )
         return list(result.scalars())
 
+    async def mark_paid_manually(self, number: str) -> Order | None:
+        """Оплата пришла мимо банка (перевод на карту) — админ подтверждает её сам.
+
+        Отменённый заказ тоже поднимаем: его отменил счётчик неоплаченных, а деньги
+        всё-таки пришли. Сумму не сверяем — банк её не присылал, за неё отвечает админ.
+        """
+        order = await self.get_by_number(number)
+        if order is None:
+            return None
+        if order.status not in ("pending", "cancelled"):
+            raise OrderError("Заказ уже оплачен")
+
+        order.status = "paid"
+        order.paid_at = datetime.now(timezone.utc)
+        await self.db.commit()
+        return order
+
+    async def delete(self, number: str) -> bool:
+        """Удаляет заказ вместе с позициями и всем журналом оплаты. Безвозвратно.
+
+        Связи грузим сразу: удаление тянет за собой каскад, а ленивая подгрузка
+        внутри async-сессии на этом и падает.
+        """
+        result = await self.db.execute(
+            select(Order)
+            .where(Order.number == number)
+            .options(
+                selectinload(Order.items),
+                selectinload(Order.payment_attempts),
+                selectinload(Order.payment_notifications),
+            )
+        )
+        order = result.scalar_one_or_none()
+        if order is None:
+            return False
+
+        await self.db.delete(order)
+        await self.db.commit()
+        return True
+
     async def set_tracking(self, number: str, tracking: str | None) -> Order | None:
         order = await self.get_by_number(number)
         if order is None:

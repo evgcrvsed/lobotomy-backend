@@ -12,6 +12,7 @@ from backend.schemas.order import (
     OrderAdminUpdate,
     OrderCreate,
     OrderCreated,
+    OrderManualPayment,
     OrderPaymentsResponse,
     OrderResponse,
     OrderTrackingUpdate,
@@ -228,6 +229,34 @@ async def admin_update_order(number: str, data: OrderAdminUpdate, db: DbDep):
     if order is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Заказ не найден")
     return order
+
+
+@router.post("/orders/{number}/mark-paid", response_model=OrderResponse, dependencies=admin_only)
+async def mark_order_paid(number: str, data: OrderManualPayment, db: DbDep):
+    """Отметить заказ оплаченным вручную — когда деньги пришли переводом на карту."""
+    service = OrderService(db)
+    try:
+        order = await service.mark_paid_manually(number)
+    except OrderError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    if order is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Заказ не найден")
+
+    # без записи в журнале заказ выглядел бы оплаченным без единого уведомления банка
+    await _log_safely(db, PaymentLogService(db).record_manual(order, data.note))
+    return order
+
+
+@router.delete("/orders/{number}", status_code=status.HTTP_204_NO_CONTENT, dependencies=admin_only)
+async def delete_order(number: str, db: DbDep):
+    """Полное удаление заказа — вместе с позициями и журналом оплаты.
+
+    Восстановить нечем: журнал уходит вместе с заказом, и следа об оплате
+    не останется. Спрашивать подтверждение — задача админки.
+    """
+    deleted = await OrderService(db).delete(number)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Заказ не найден")
 
 
 @router.patch("/orders/{number}/tracking", response_model=OrderResponse, dependencies=admin_only)

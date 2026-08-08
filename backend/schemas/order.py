@@ -65,6 +65,12 @@ class OrderCreated(BaseModel):
     payment_url: str
 
 
+class OrderManualPayment(BaseModel):
+    """Отметка об оплате мимо банка. Комментарий — чем подтверждается перевод."""
+
+    note: str | None = Field(default=None, max_length=200)
+
+
 class PaymentAttemptResponse(BaseModel):
     """Наш вызов Init в Т-Банк. PaymentId ищется в личном кабинете банка."""
 
@@ -73,6 +79,7 @@ class PaymentAttemptResponse(BaseModel):
     amount: int
     status: str
     error: str | None
+    note: str | None
     created_at: datetime
     confirmed_at: datetime | None
 
