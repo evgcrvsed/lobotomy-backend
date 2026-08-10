@@ -18,7 +18,7 @@ DbDep = Annotated[AsyncSession, Depends(get_db)]
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 # на диск после сжатия ляжет в разы меньше
-MAX_SIZE = 20 * 1024 * 1024  # 20 МБ
+MAX_SIZE = 300 * 1024 * 1024  # 20 МБ
 
 
 def _images_dir() -> Path:
