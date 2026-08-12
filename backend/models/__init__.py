@@ -10,6 +10,7 @@ from backend.models.product_image import ProductImage
 from backend.models.product_size import ProductSize
 from backend.models.site_setting import SiteSetting
 from backend.models.user import User
+from backend.models.visit import Visit
 
 __all__ = [
     "Base",
@@ -26,4 +27,5 @@ __all__ = [
     "ProductSize",
     "SiteSetting",
     "User",
+    "Visit",
 ]

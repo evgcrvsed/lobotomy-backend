@@ -18,8 +18,9 @@ from backend.services.order_service import OrderError, OrderService
 from backend.services.payment_log_service import PaymentLogService
 from backend.services.product_service import CollectionNotFoundError, ProductService
 from backend.services.slugs import slugify
-from backend.services.stats_service import StatsError, StatsService
+from backend.services.stats_service import StatsError, StatsService, resolve_period
 from backend.services.tinkoff_service import TinkoffError, init_payment, verify_notification
+from backend.services.visit_service import VisitService, classify
 
 __all__ = [
     "CollectionNameTakenError",
@@ -35,7 +36,9 @@ __all__ = [
     "StatsError",
     "StatsService",
     "TinkoffError",
+    "VisitService",
     "VkAuthError",
+    "classify",
     "client_ip",
     "compress_image",
     "create_token",
@@ -47,6 +50,7 @@ __all__ = [
     "hash_login_code",
     "init_payment",
     "needs_compression",
+    "resolve_period",
     "send_login_code_email",
     "slugify",
     "verify_notification",

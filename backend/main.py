@@ -19,6 +19,7 @@ from backend.routers import (
     ProductsRouter,
     SettingsRouter,
     UploadsRouter,
+    VisitsRouter,
 )
 from backend.services import slugify
 from backend.services.cdek_sync import poll_forever
@@ -264,3 +265,4 @@ app.include_router(AuthRouter)
 app.include_router(PaymentsRouter)
 app.include_router(DeliveryRouter)
 app.include_router(SettingsRouter)
+app.include_router(VisitsRouter)

@@ -5,6 +5,7 @@ from backend.routers.payments import router as PaymentsRouter
 from backend.routers.products import router as ProductsRouter
 from backend.routers.settings import router as SettingsRouter
 from backend.routers.uploads import router as UploadsRouter
+from backend.routers.visits import router as VisitsRouter
 
 __all__ = [
     "AuthRouter",
@@ -14,4 +15,5 @@ __all__ = [
     "ProductsRouter",
     "SettingsRouter",
     "UploadsRouter",
+    "VisitsRouter",
 ]

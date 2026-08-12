@@ -1,4 +1,5 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,9 +24,28 @@ MONTH_FROM_DAYS = 400
 # Год за раз — уже 12 столбцов по месяцам; больше отчёт не осилит осмысленно
 MAX_RANGE_DAYS = 1100
 
+# Период отчёта по умолчанию — месяц, включая сегодняшний день
+DEFAULT_PERIOD_DAYS = 30
+
 
 class StatsError(Exception):
     pass
+
+
+def resolve_period(date_from: date | None, date_to: date | None) -> tuple[date, date]:
+    """Границы отчёта: пустые заменяет умолчанием, кривые отвергает.
+
+    Общая для всех отчётов админки — иначе «за месяц» на одной странице
+    и на другой означало бы разные дни.
+    """
+    today = datetime.now(ZoneInfo(REPORT_TZ)).date()
+    date_to = date_to or today
+    date_from = date_from or date_to - timedelta(days=DEFAULT_PERIOD_DAYS - 1)
+    if date_from > date_to:
+        raise StatsError("Начало периода позже его конца")
+    if (date_to - date_from).days + 1 > MAX_RANGE_DAYS:
+        raise StatsError("Слишком длинный период — возьмите не больше трёх лет")
+    return date_from, date_to
 
 
 def pick_unit(date_from: date, date_to: date) -> str:
@@ -66,12 +86,9 @@ class StatsService:
 
         Дата заказа здесь — день оплаты, а не оформления: в отчёте о заработке
         важно, когда пришли деньги. Неоплаченные заказы в него не входят вовсе.
-        """
-        if date_from > date_to:
-            raise StatsError("Начало периода позже его конца")
-        if (date_to - date_from).days + 1 > MAX_RANGE_DAYS:
-            raise StatsError("Слишком длинный период — возьмите не больше трёх лет")
 
+        Границы приходят уже проверенными — см. resolve_period.
+        """
         unit = pick_unit(date_from, date_to)
         # paid_at лежит в UTC; переводим в часовой пояс отчёта и уже по местной
         # дате и режем период, и раскладываем по корзинам
