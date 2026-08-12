@@ -18,6 +18,7 @@ from backend.services.order_service import OrderError, OrderService
 from backend.services.payment_log_service import PaymentLogService
 from backend.services.product_service import CollectionNotFoundError, ProductService
 from backend.services.slugs import slugify
+from backend.services.stats_service import StatsError, StatsService
 from backend.services.tinkoff_service import TinkoffError, init_payment, verify_notification
 
 __all__ = [
@@ -31,6 +32,8 @@ __all__ = [
     "OrderService",
     "PaymentLogService",
     "ProductService",
+    "StatsError",
+    "StatsService",
     "TinkoffError",
     "VkAuthError",
     "client_ip",

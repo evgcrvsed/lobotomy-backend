@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -134,6 +134,28 @@ class OrderItemAdminAdd(BaseModel):
     size: str | None = Field(default=None, max_length=20)
     qty: int = Field(default=1, ge=1, le=100)
     price: int | None = Field(default=None, ge=0, le=10_000_000)
+
+
+class RevenuePoint(BaseModel):
+    """Один столбец диаграммы. date — начало корзины (дня, недели или месяца)."""
+
+    date: date
+    revenue: int
+    orders: int
+
+
+class RevenueStats(BaseModel):
+    """Заработок за период. Считается по дате оплаты — см. StatsService.revenue."""
+
+    date_from: date
+    date_to: date
+    unit: str  # day | week | month — шаг столбца, его выбирает бэкенд по размаху
+    revenue: int
+    items_revenue: int
+    delivery_revenue: int
+    orders: int
+    average_check: int
+    points: list[RevenuePoint]
 
 
 class OrderAdminUpdate(BaseModel):

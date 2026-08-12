@@ -1,4 +1,6 @@
+from datetime import date, datetime, timedelta
 from typing import Annotated
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -16,6 +18,7 @@ from backend.schemas.order import (
     OrderPaymentsResponse,
     OrderResponse,
     OrderTrackingUpdate,
+    RevenueStats,
 )
 from backend.services.auth_service import client_ip, get_current_admin, get_current_user, get_optional_user
 from backend.services.cdek_service import CdekError
@@ -23,9 +26,13 @@ from backend.services.cdek_sync import sync_order
 from backend.services.email_service import EmailNotConfiguredError, EmailSendError
 from backend.services.order_service import OrderError, OrderService
 from backend.services.payment_log_service import PaymentLogService
+from backend.services.stats_service import REPORT_TZ, StatsError, StatsService
 from backend.services.tinkoff_service import TinkoffError, init_payment, verify_notification
 
 router = APIRouter(prefix="/api", tags=["orders"])
+
+# Период отчёта по умолчанию — месяц, включая сегодняшний день
+DEFAULT_PERIOD_DAYS = 30
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 admin_only = [Depends(get_current_admin)]
@@ -217,6 +224,26 @@ async def all_orders(db: DbDep, search: str | None = None):
     if search is not None and search.strip():
         return await service.search(search)
     return await service.list_active()
+
+
+@router.get("/orders/stats", response_model=RevenueStats, dependencies=admin_only)
+async def orders_stats(
+    db: DbDep,
+    date_from: date | None = None,
+    date_to: date | None = None,
+):
+    """Заработок за период — для диаграммы в админке.
+
+    Период задаётся датами включительно; по умолчанию — последний месяц.
+    Маршрут объявлен до /orders/{number}, иначе «stats» уйдёт туда как номер заказа.
+    """
+    today = datetime.now(ZoneInfo(REPORT_TZ)).date()
+    date_to = date_to or today
+    date_from = date_from or date_to - timedelta(days=DEFAULT_PERIOD_DAYS - 1)
+    try:
+        return await StatsService(db).revenue(date_from, date_to)
+    except StatsError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.patch("/orders/{number}", response_model=OrderResponse, dependencies=admin_only)
