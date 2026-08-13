@@ -10,6 +10,7 @@ from sqlalchemy import select, text
 
 from backend.config import settings
 from backend.database import AsyncSessionLocal, engine
+from backend.errors import register_error_handlers, setup_logging
 from backend.models import Base, DeliveryMethod, Order, PaymentAttempt, Product, SiteSetting
 from backend.routers import (
     AuthRouter,
@@ -243,6 +244,8 @@ async def lifespan(app: FastAPI):
             await cdek_task
 
 
+setup_logging(settings.debug)
+
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
@@ -250,11 +253,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Логирование ошибок и код обращения (X-Request-ID) — см. backend/errors.py
+register_error_handlers(app)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
+    # без этого браузер не отдаёт фронтенду код обращения из заголовка ответа
+    expose_headers=["X-Request-ID"],
 )
 
 app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="static")
