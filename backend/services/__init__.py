@@ -16,7 +16,7 @@ from backend.services.collection_service import CollectionNameTakenError, Collec
 from backend.services.image_service import compress_image, needs_compression
 from backend.services.order_service import OrderError, OrderService
 from backend.services.payment_log_service import PaymentLogService
-from backend.services.product_service import CollectionNotFoundError, ProductService
+from backend.services.product_service import CollectionNotFoundError, ProductInOrdersError, ProductService
 from backend.services.promo_code_service import PromoCodeService, PromoCodeTakenError
 from backend.services.slugs import slugify
 from backend.services.stats_service import StatsError, StatsService, resolve_period
@@ -33,6 +33,7 @@ __all__ = [
     "OrderError",
     "OrderService",
     "PaymentLogService",
+    "ProductInOrdersError",
     "ProductService",
     "PromoCodeService",
     "PromoCodeTakenError",

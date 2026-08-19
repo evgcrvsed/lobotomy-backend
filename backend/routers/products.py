@@ -4,9 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
-from backend.schemas.product import ProductCreate, ProductResponse
+from backend.schemas.product import ProductCreate, ProductResponse, ProductVisibilityUpdate
 from backend.services.auth_service import get_current_admin
-from backend.services.product_service import CollectionNotFoundError, ProductService
+from backend.services.product_service import CollectionNotFoundError, ProductInOrdersError, ProductService
 
 router = APIRouter(prefix="/api/products", tags=["products"])
 
@@ -56,8 +56,19 @@ async def update_product(product_id: int, data: ProductCreate, db: DbDep):
     return product
 
 
+@router.patch("/{product_id}/visibility", response_model=ProductResponse, dependencies=admin_only)
+async def set_product_visibility(product_id: int, data: ProductVisibilityUpdate, db: DbDep):
+    product = await ProductService(db).set_hidden(product_id, data.is_hidden)
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    return product
+
+
 @router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=admin_only)
 async def delete_product(product_id: int, db: DbDep):
-    deleted = await ProductService(db).delete(product_id)
+    try:
+        deleted = await ProductService(db).delete(product_id)
+    except ProductInOrdersError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")

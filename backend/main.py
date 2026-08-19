@@ -200,6 +200,10 @@ async def lifespan(app: FastAPI):
         await conn.execute(
             text("ALTER TABLE products ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0")
         )
+        # снят с витрины, но доступен по прямой ссылке
+        await conn.execute(
+            text("ALTER TABLE products ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN NOT NULL DEFAULT FALSE")
+        )
         await conn.execute(
             text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE")
         )

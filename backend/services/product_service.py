@@ -3,12 +3,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.config import settings
-from backend.models import Collection, Product, ProductImage, ProductSize
+from backend.models import Collection, OrderItem, Product, ProductImage, ProductSize
 from backend.schemas.product import ProductCreate
 from backend.services.slugs import slugify
 
 
 class CollectionNotFoundError(Exception):
+    pass
+
+
+class ProductInOrdersError(Exception):
     pass
 
 
@@ -91,6 +95,7 @@ class ProductService:
             density=data.density,
             price=data.price,
             sort_order=data.sort_order if data.sort_order is not None else await self._next_sort_order(),
+            is_hidden=data.is_hidden,
             size_columns=data.size_columns,
         )
         self.db.add(product)
@@ -138,6 +143,7 @@ class ProductService:
         product.material = data.material
         product.density = data.density
         product.price = data.price
+        product.is_hidden = data.is_hidden
         product.size_columns = data.size_columns
         if data.sort_order is not None:
             product.sort_order = data.sort_order
@@ -161,10 +167,36 @@ class ProductService:
         await self._delete_unused_files(old_filenames)
         return await self.get_by_id(product_id)
 
+    async def set_hidden(self, product_id: int, is_hidden: bool) -> Product | None:
+        """Только флаг витрины — чтобы прятать товар из списка в админке,
+        не гоняя туда-сюда всю форму со сборкой картинок и размерной сетки."""
+        product = await self.get_by_id(product_id)
+        if product is None:
+            return None
+
+        product.is_hidden = is_hidden
+        await self.db.commit()
+        return await self.get_by_id(product_id)
+
     async def delete(self, product_id: int) -> bool:
         product = await self.get_by_id(product_id)
         if product is None:
             return False
+
+        # Позиция заказа ссылается на товар внешним ключом без ON DELETE, поэтому
+        # удаление упирается в него и раньше падало пятисоткой. Считаем заказы сами,
+        # чтобы объяснить причину. Заказ держит ссылку в любом статусе — брошенная
+        # корзина тоже, её лишь помечают cancelled.
+        result = await self.db.execute(
+            select(func.count(func.distinct(OrderItem.order_id))).where(OrderItem.product_id == product_id)
+        )
+        orders_count = result.scalar_one()
+        if orders_count:
+            raise ProductInOrdersError(
+                f"Товар есть в {orders_count} заказ(ах) — удалить нельзя. "
+                f"Скройте его из каталога: карточка останется доступна по прямой ссылке"
+            )
+
         filenames = [img.filename for img in product.images]
         await self.db.delete(product)
         await self.db.commit()

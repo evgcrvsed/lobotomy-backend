@@ -63,6 +63,9 @@ class ProductCreate(BaseModel):
     price: int = Field(..., gt=0)
     # Порядок в каталоге. None — поставить в конец (текущий максимум + шаг)
     sort_order: int | None = Field(default=None, ge=0, le=100_000)
+    # Убран из каталога на главной. По прямой ссылке карточка работает,
+    # товар кладётся в корзину и покупается как обычно
+    is_hidden: bool = False
     images: list[ProductImageCreate] = Field(default_factory=list)
     # Шапка размерной сетки — названия столбцов замеров в порядке показа
     size_columns: list[str] = Field(default_factory=list)
@@ -81,6 +84,10 @@ class ProductCreate(BaseModel):
         return cleaned[:MAX_SIZE_COLUMNS]
 
 
+class ProductVisibilityUpdate(BaseModel):
+    is_hidden: bool
+
+
 class ProductResponse(BaseModel):
     id: int
     collection_id: int
@@ -91,6 +98,7 @@ class ProductResponse(BaseModel):
     density: int | None
     price: int
     sort_order: int
+    is_hidden: bool
     images: list[ProductImageResponse]
     size_columns: list[str]
     sizes: list[ProductSizeResponse]
