@@ -18,6 +18,7 @@ from backend.routers import (
     DeliveryRouter,
     PaymentsRouter,
     ProductsRouter,
+    PromoCodesRouter,
     SettingsRouter,
     UploadsRouter,
     VisitsRouter,
@@ -267,6 +268,7 @@ app.add_middleware(
 
 app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="static")
 app.include_router(ProductsRouter)
+app.include_router(PromoCodesRouter)
 app.include_router(CollectionsRouter)
 app.include_router(UploadsRouter)
 app.include_router(AuthRouter)

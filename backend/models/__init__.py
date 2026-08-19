@@ -8,6 +8,7 @@ from backend.models.payment import PaymentAttempt, PaymentNotification
 from backend.models.product import Product
 from backend.models.product_image import ProductImage
 from backend.models.product_size import ProductSize
+from backend.models.promo_code import PromoCode
 from backend.models.site_setting import SiteSetting
 from backend.models.user import User
 from backend.models.visit import Visit
@@ -25,6 +26,7 @@ __all__ = [
     "Product",
     "ProductImage",
     "ProductSize",
+    "PromoCode",
     "SiteSetting",
     "User",
     "Visit",

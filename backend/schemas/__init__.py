@@ -23,6 +23,7 @@ from backend.schemas.product import (
     ProductSizeCreate,
     ProductSizeResponse,
 )
+from backend.schemas.promo_code import PromoCodeCreate, PromoCodeResponse
 from backend.schemas.user import (
     AuthResponse,
     EmailCodeRequest,
@@ -60,6 +61,8 @@ __all__ = [
     "ProductResponse",
     "ProductSizeCreate",
     "ProductSizeResponse",
+    "PromoCodeCreate",
+    "PromoCodeResponse",
     "UserResponse",
     "UserUpdate",
     "VkLoginRequest",
