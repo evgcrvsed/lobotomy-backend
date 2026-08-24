@@ -4,12 +4,16 @@
 отчётности, а для работы: по листу владелец заказывает отшив и прямо в нём
 ведёт отметку «Не пошито / Пошито».
 
-Отсюда главное правило: выгрузка не переписывает лист, а сверяется с ним.
-Незнакомый заказ дописывает, знакомый — обновляет только в наших столбцах
-(появился трек, поправили адрес). Status, «Цвет» и «Вес» принадлежат человеку
-и не трогаются никогда. Отметок «выгружено» в базе нет: что уже в таблице,
-знает сама таблица — по столбцу Order ID. Поэтому кнопку можно жать сколько
-угодно, и заказ от этого не задвоится.
+Отсюда главное правило: выгрузка не переписывает лист вслепую, а сверяется
+с ним. Отметка о пошиве (Status) переезжает к своей строке по ключу и никогда
+не затирается; строки, которых в выгрузке уже нет, не удаляются, а сдвигаются
+вниз. Отметок «выгружено» в базе нет: что уже в таблице, знает сама таблица.
+Поэтому кнопку можно жать сколько угодно, и заказ от этого не задвоится.
+
+Строки на листе товара идут по размеру, и между размерами лежит пустая строка:
+лист читают, чтобы понять, сколько чего слать на отшив, и группы должны быть
+видны глазами. На сводном листе та же роль у номера заказа — там рядом должны
+стоять позиции одного человека.
 
 Задачи ставит админка через таблицу export_jobs, забирает их отдельный процесс
 (backend/workers/sheets.py). Здесь — и сборка строк, и цикл разбора очереди.
@@ -27,9 +31,9 @@ from sqlalchemy.orm import selectinload
 
 from backend.config import settings
 from backend.database import AsyncSessionLocal
-from backend.models import DeliveryMethod, ExportJob, Order
+from backend.models import DeliveryMethod, ExportJob, Order, Product
 from backend.models.export_job import MESSAGE_LIMIT
-from backend.services.sheets_service import GoogleSheet, sheet_title
+from backend.services.sheets_service import GoogleSheet, sheet_title, size_sort_key
 from backend.services.stats_service import REPORT_TZ
 
 # Выгружаем то, за что деньги пришли: неоплаченные и брошенные заказы отшивать
@@ -63,11 +67,15 @@ def _address(order: Order) -> str:
     return ", ".join(p for p in parts if p)
 
 
-def _size_cell(item) -> str:
-    """Размер позиции. Количество дописываем сюда же — отдельного столбца нет."""
-    size = item.size or ""
-    if item.qty > 1:
-        return f"{size} × {item.qty}" if size else f"× {item.qty}"
+def _size_cell(size: str | None, qty: int) -> str:
+    """Размер позиции. Количество дописываем сюда же — отдельного столбца нет.
+
+    На ключ строки количество не влияет (см. size_group): доложили ещё одну
+    футболку того же размера — это та же строка, а не новая.
+    """
+    size = size or ""
+    if qty > 1:
+        return f"{size} × {qty}" if size else f"× {qty}"
     return size
 
 
@@ -79,38 +87,58 @@ def _order_date(order: Order) -> str:
     return order.created_at.astimezone(ZoneInfo(REPORT_TZ)).strftime("%Y-%m-%d")
 
 
-def build_pages(orders: list[Order], delivery_labels: dict[str, str]) -> dict[str, list[dict]]:
+def build_pages(
+    orders: list[Order],
+    delivery_labels: dict[str, str],
+    products: dict[int, Product],
+) -> dict[str, list[dict]]:
     """Раскладывает заказы по листам: {название листа: [строки]}.
 
-    Позиции одного товара внутри одного заказа сводим в одну строку. Иначе заказ,
-    где взяли одну и ту же футболку в двух размерах, дал бы две неотличимые строки
-    (ключ строки — заказ и товар), и вторую отбросила бы проверка на дубль.
-    Размеры перечисляем через запятую, «Заплачено» суммируем.
+    Строка — это один размер одного товара из одного заказа. Раньше позиции
+    товара сводились в одну строку («M, L»), но лист читают по размерам —
+    в таком виде по нему не посчитать, сколько шить каждого. Поэтому размеры
+    разъехались по своим строкам; количество одного размера по-прежнему
+    в ячейке размера («M × 2»), отдельного столбца под него нет.
 
-    Столбцы Status, «Цвет» и «Вес» тут не заполняются вовсе: их ведёт владелец
-    руками. Новой строке начальное «Не пошито» проставит сам GoogleSheet, а
-    дальше эти ячейки — не наше дело.
+    Группируем по товару, а не по одному названию: две футболки разного цвета
+    названы одинаково, и сливать их нельзя — шьются они порознь.
+
+    «Цвет» и «Вес» берём из карточки товара; название — из позиции заказа, потому
+    что там оно снято на момент покупки и не меняется задним числом. «Заплачено» —
+    сумма по этой строке, «Стоимость доставки» и «Итог» — общие по заказу, они
+    повторяются во всех его строках. Status не заполняем вовсе: начальное
+    «Не пошито» проставит новой строке сам GoogleSheet.
 
     Заказ, в котором больше одного товара, дополнительно попадает целиком
     на сводный лист «Мультизаказ» — см. MULTI_ORDER_TITLE.
     """
     pages: dict[str, list[dict]] = defaultdict(list)
     for order in orders:
-        by_product: dict[str, list] = defaultdict(list)
+        # Ключ — товар и размер. Товар, а не одно название: у разных товаров имя
+        # может совпасть. product_id пуст у позиций, чей товар успели удалить, —
+        # такие сводим по имени, цвет и вес для них взять всё равно неоткуда.
+        # Две позиции с одним размером (админ дозаказал) складываются по количеству.
+        by_line: dict[tuple, list] = defaultdict(list)
         for item in order.items:
-            by_product[item.name].append(item)
+            by_line[(item.product_id, item.name, item.size or "")].append(item)
 
-        # заказ из нескольких разных товаров дублируем на сводный лист целиком
-        multi = len(by_product) >= MULTI_ORDER_MIN
+        # заказ из нескольких разных ТОВАРОВ (а не размеров) — сборный
+        distinct_products = {(product_id, name) for product_id, name, _ in by_line}
+        multi = len(distinct_products) >= MULTI_ORDER_MIN
 
-        for name, items in by_product.items():
-            sizes = [s for s in (_size_cell(i) for i in items) if s]
+        for (product_id, name, size), items in by_line.items():
+            product = products.get(product_id)
+            qty = sum(i.qty for i in items)
             row = {
                 "Order ID": order.number,
                 "Дата заказа": _order_date(order),
                 "Товар": name,
-                "Размер": ", ".join(sizes),
+                "Цвет": (product.color or "") if product else "",
+                "Вес": (product.weight or "") if product else "",
+                "Размер": _size_cell(size, qty),
                 "Заплачено": sum(i.price * i.qty for i in items),
+                "Стоимость доставки": order.delivery_price,
+                "Итог": order.total,
                 "ФИО": order.full_name or "",
                 "Телефон": order.phone or "",
                 "Почта": order.email,
@@ -125,9 +153,13 @@ def build_pages(orders: list[Order], delivery_labels: dict[str, str]) -> dict[st
                 # тот же самый dict, а не копия: строку из него никто не меняет
                 pages[MULTI_ORDER_TITLE].append(row)
 
-    # на сводном листе держим позиции одного заказа рядом
-    if MULTI_ORDER_TITLE in pages:
-        pages[MULTI_ORDER_TITLE].sort(key=lambda r: (r["Дата заказа"], r["Order ID"], r["Товар"]))
+    for title, rows in pages.items():
+        if title == MULTI_ORDER_TITLE:
+            # сводный лист читают по заказам — держим позиции одного рядом
+            rows.sort(key=lambda r: (r["Дата заказа"], r["Order ID"], r["Товар"], r["Цвет"]))
+        else:
+            # лист товара читают по размерам: сначала все S, потом все M...
+            rows.sort(key=lambda r: (size_sort_key(r["Размер"]), r["Цвет"], r["Дата заказа"]))
     return pages
 
 
@@ -136,13 +168,19 @@ async def collect_pages(db: AsyncSession) -> dict[str, list[dict]]:
     methods = await db.execute(select(DeliveryMethod))
     delivery_labels = {m.code: m.label for m in methods.scalars()}
 
+    # Цвет и вес живут в карточке товара, а не в позиции заказа: их завели ради
+    # отшива уже после того, как часть заказов была оформлена, и снимка на момент
+    # покупки у старых позиций просто нет. Значит, берём текущее значение.
+    catalog = await db.execute(select(Product))
+    products = {p.id: p for p in catalog.scalars()}
+
     result = await db.execute(
         select(Order)
         .where(Order.status.in_(EXPORTED_STATUSES))
         .options(selectinload(Order.items))
         .order_by(Order.created_at)  # в таблице строки лягут в порядке продаж
     )
-    return build_pages(list(result.scalars()), delivery_labels)
+    return build_pages(list(result.scalars()), delivery_labels, products)
 
 
 def _push_sync(pages: dict[str, list[dict]]) -> tuple[int, int, int]:
@@ -154,7 +192,10 @@ def _push_sync(pages: dict[str, list[dict]]) -> tuple[int, int, int]:
     added = updated = 0
     titles = sorted(pages)
     for i, title in enumerate(titles):
-        page_added, page_updated = sheet.sync_orders(title, pages[title])
+        # чем отделять группы пустой строкой: на листе товара это размер,
+        # на сводном — заказ (его позиции должны стоять вместе)
+        group_header = "Order ID" if title == MULTI_ORDER_TITLE else "Размер"
+        page_added, page_updated = sheet.sync_orders(title, pages[title], group_header)
         added += page_added
         updated += page_updated
         # пауза между листами: Sheets API считает запросы, а не строки

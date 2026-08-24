@@ -214,6 +214,9 @@ async def lifespan(app: FastAPI):
         await conn.execute(text(
             "ALTER TABLE product_sizes ADD COLUMN IF NOT EXISTS measurements JSONB NOT NULL DEFAULT '{}'::jsonb"
         ))
+        # цвет и вес товара — только для выгрузки в таблицу, витрина их не видит
+        await conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS color VARCHAR(100)"))
+        await conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS weight VARCHAR(100)"))
         # комментарий к оплате, отмеченной админом вручную (перевод на карту)
         await conn.execute(text("ALTER TABLE payment_attempts ADD COLUMN IF NOT EXISTS note TEXT"))
         # старые колонки замеров больше не нужны, но сносим их не здесь, а руками —

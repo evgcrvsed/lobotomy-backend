@@ -1,14 +1,20 @@
-"""Клиент Google-таблицы: один лист на товар, одна строка на заказ.
+"""Клиент Google-таблицы: один лист на товар, одна строка на позицию заказа.
 
 Низкий уровень — здесь только работа с самой таблицей, про заказы из БД
 этот модуль не знает (этим занимается sheets_export.py). Разделение то же,
 что у СДЭК: cdek_service.py — общение с чужим API, cdek_sync.py — наша логика.
 
-Главное свойство: таблица — не свалка, а рабочий документ, в котором владелец
-руками ведёт отметки о пошиве. Поэтому выгрузка не переписывает лист целиком,
-а сверяется с ним: незнакомый заказ дописывает, знакомый — обновляет только
-в «своих» столбцах. Отметок «выгружено» в базе для этого не нужно: что уже
-выгружено, знает сама таблица (столбец Order ID).
+Лист не дописывается, а перекладывается заново: строки идут в том порядке,
+в каком их прислал sheets_export, а между группами (разными размерами) кладётся
+пустая строка. Порядок строк на листе поэтому наш, а не «в каком пришли продажи».
+
+Что при этом не теряется:
+  * отметка о пошиве (Status) — она переносится к строке по её ключу;
+  * строки, которых в выгрузке больше нет (отменённый заказ, ручная запись), —
+    они уезжают в конец листа, а не удаляются.
+
+Отметок «выгружено» в базе для этого не нужно: что уже в таблице, знает сама
+таблица — по ключу строки (KEY_HEADERS).
 
 gspread работает синхронно (внутри requests), поэтому вызывать его из async-кода
 напрямую нельзя — см. asyncio.to_thread в sheets_export.py.
@@ -30,7 +36,7 @@ FORBIDDEN_IN_TITLE = "[]:*?/\\"
 MAX_TITLE = 100
 FALLBACK_TITLE = "Без названия"
 
-# Новый лист: 100 строк с запасом, дальше Google расширит его сам при append
+# Новый лист: 100 строк с запасом, дальше растим по мере надобности (_ensure_grid)
 NEW_SHEET_ROWS = 100
 
 # Первая строка на каждом листе — шапка
@@ -41,6 +47,19 @@ HEADER_ROWS = 1
 # в ячейку #ERROR!, а имя или адрес, начинающийся с «=», стал бы живой формулой
 # в чужой таблице. Числа при этом остаются числами: мы их числами и передаём.
 VALUE_INPUT = "RAW"
+
+# Порядок размеров на листе. Магазин пользуется двумя шкалами — буквенной
+# и Mini/Medium/Big; у одного товара в ходу одна из них, так что то, что
+# в этом списке они идут подряд, ничему не мешает.
+SIZE_ORDER = (
+    "xxs", "xs", "s", "m", "l", "xl", "xxl", "xxxl",
+    "mini", "medium", "big",
+)
+SIZE_RANK = {label: i for i, label in enumerate(SIZE_ORDER)}
+# Незнакомый размер — после всех известных, дальше по алфавиту.
+# Пустой размер (у товара их просто нет) — в самый конец.
+RANK_UNKNOWN = len(SIZE_ORDER) + 1
+RANK_EMPTY = len(SIZE_ORDER) + 2
 
 
 def rgb(r: int, g: int, b: int) -> dict:
@@ -62,28 +81,51 @@ def _as_text(value) -> str:
     return "" if value is None else str(value).strip()
 
 
+def size_group(cell) -> str:
+    """Размер без количества: «M × 3» → «M».
+
+    Количество живёт в той же ячейке (отдельного столбца под него нет), но
+    к группировке и к опознанию строки оно отношения не имеет: доложили ещё
+    одну футболку того же размера — это та же строка, а не новая.
+    """
+    return _as_text(cell).split("×")[0].strip()
+
+
+def size_sort_key(cell) -> tuple[int, str]:
+    """По чему сортировать строки внутри листа."""
+    label = size_group(cell)
+    if not label:
+        return (RANK_EMPTY, "")
+    normalized = label.casefold()
+    if normalized in SIZE_RANK:
+        return (SIZE_RANK[normalized], "")
+    return (RANK_UNKNOWN, normalized)
+
+
 class GoogleSheet:
     HEADERS = [
         "Order ID", "Status", "Дата заказа",
         "Товар", "Цвет", "Размер", "Вес",
-        "Заплачено",
+        "Заплачено", "Стоимость доставки", "Итог",
         "ФИО", "Телефон", "Почта",
         "Адрес доставки", "Способ доставки", "Трек отправки",
     ]
 
-    # Чем строка опознаётся при повторной выгрузке: номер заказа и товар.
-    # На листе товара «Товар» одинаков во всех строках, поэтому проверка сводится
-    # ровно к номеру заказа. А на сводном листе «Мультизаказ» один заказ даёт
-    # несколько строк (разные товары), и без товара в ключе они затирали бы друг друга.
+    # Чем строка опознаётся при повторной выгрузке: заказ, товар, цвет и размер.
+    # На листе товара «Товар» одинаков во всех строках, так что по сути ключ —
+    # это заказ плюс то, что в нём взяли. Цвет нужен потому, что две футболки
+    # разного цвета — два товара с одинаковым названием; размер — потому что
+    # одну и ту же вещь берут в двух размерах, и это две разные строки.
     ID_HEADER = "Order ID"
-    KEY_HEADERS = ("Order ID", "Товар")
+    KEY_HEADERS = ("Order ID", "Товар", "Цвет", "Размер")
+    # Из ключа обязательны только эти: цвет и размер часто пусты,
+    # и пустые они — нормальная часть ключа, а не повод отказать
+    REQUIRED_HEADERS = ("Order ID", "Товар")
 
-    # Столбцы, которые ведёт человек, а не выгрузка.
-    # Status — отметка о пошиве, ради неё таблица и существует; цвет и вес
-    # в базе магазина не хранятся вовсе. Новой строке Status ставим начальное
-    # значение, дальше эти три столбца не трогаем никогда — иначе очередная
-    # синхронизация затирала бы работу владельца.
-    MANUAL_HEADERS = ("Status", "Цвет", "Вес")
+    # Единственный столбец, который ведёт человек, а не выгрузка: отметка о пошиве.
+    # Ради неё таблица и существует. Новой строке ставим начальное значение,
+    # дальше не трогаем никогда — иначе синхронизация затирала бы работу владельца.
+    MANUAL_HEADERS = ("Status",)
     NEW_ROW_STATUS = "Не пошито"
 
     def __init__(self, key_file: str | Path, spreadsheet_id: str) -> None:
@@ -92,11 +134,14 @@ class GoogleSheet:
         )
         self.sh = gspread.authorize(creds).open_by_key(spreadsheet_id)
         self._ws_cache: dict[str, gspread.Worksheet] = {}
-        # Содержимое листов: {лист: {Order ID: [номер строки, значения]}}.
+        # Содержимое листов: {лист: {ключ строки: (номер строки, значения)}}.
         # Читаем лист один раз за проход — не ради скорости, а ради лимитов
         # Sheets API: проверять каждый заказ отдельным запросом нельзя, на сотне
         # заказов это упёрлось бы в 429 («60 запросов в минуту»).
-        self._index_cache: dict[str, dict[tuple[str, ...], tuple[int | None, list[str]]]] = {}
+        self._index_cache: dict[str, dict[tuple[str, ...], tuple[int, list[str]]]] = {}
+        # Сколько строк занимало тело листа до нашей записи: хвост от прошлого
+        # прохода надо затереть, иначе после сортировки останутся объедки
+        self._body_len: dict[str, int] = {}
 
     # ---------- листы ----------
 
@@ -121,16 +166,25 @@ class GoogleSheet:
         })
         ws.freeze(rows=1)
 
-    def index(self, title: str) -> dict[tuple[str, ...], tuple[int | None, list[str]]]:
+    def _ensure_grid(self, ws: gspread.Worksheet, rows: int) -> None:
+        """Дорастить лист, если строк на нём меньше, чем мы собираемся записать.
+
+        Раньше об этом заботился append_rows — он расширял лист сам. Мы пишем
+        диапазоном, а запись за пределы сетки Google просто отвергает.
+        """
+        if ws.row_count < rows:
+            ws.add_rows(rows - ws.row_count)
+
+    def index(self, title: str) -> dict[tuple[str, ...], tuple[int, list[str]]]:
         """Что на листе уже есть: ключ строки -> (номер строки, её значения).
 
-        Номер None — строку дописали прямо сейчас и настоящий её номер
-        назначает Google; обновлять такую строку в этом же проходе нечего.
+        Строки-разделители (пустые) сюда не попадают: у них нет номера заказа.
         """
         if title not in self._index_cache:
             ws = self.ws(title)
             rows = ws.get_all_values()[HEADER_ROWS:]
-            index: dict[tuple[str, ...], tuple[int | None, list[str]]] = {}
+            self._body_len[title] = len(rows)
+            index: dict[tuple[str, ...], tuple[int, list[str]]] = {}
             for offset, row in enumerate(rows):
                 # хвостовые пустые ячейки Google не присылает — дополняем сами
                 padded = list(row) + [""] * (len(self.HEADERS) - len(row))
@@ -141,11 +195,16 @@ class GoogleSheet:
             self._index_cache[title] = index
         return self._index_cache[title]
 
+    # ---------- строки ----------
+
     def _key(self, row: list[str]) -> tuple[str, ...]:
         """Ключ строки из её значений — по нему сверяемся с тем, что уже на листе."""
-        return tuple(_as_text(row[self.HEADERS.index(h)]) for h in self.KEY_HEADERS)
-
-    # ---------- строки ----------
+        parts = []
+        for header in self.KEY_HEADERS:
+            value = row[self.HEADERS.index(header)]
+            # размер сравниваем без количества: «M» и «M × 2» — одна и та же строка
+            parts.append(size_group(value) if header == "Размер" else _as_text(value))
+        return tuple(parts)
 
     def _row_for(self, data: dict) -> tuple[tuple[str, ...], list]:
         """Проверяет поля строки, раскладывает её по столбцам и считает ключ."""
@@ -153,9 +212,9 @@ class GoogleSheet:
         if unknown:
             raise KeyError(f"Неизвестные поля: {', '.join(sorted(unknown))}")
 
-        # Пустое поле ключа — это тихая беда: строку не с чем сопоставить, и
-        # каждая выгрузка добавляла бы её заново. Лучше упасть сразу и громко.
-        missing = [h for h in self.KEY_HEADERS if not _as_text(data.get(h))]
+        # Пустое обязательное поле — это тихая беда: строку не с чем сопоставить,
+        # и каждая выгрузка добавляла бы её заново. Лучше упасть сразу и громко.
+        missing = [h for h in self.REQUIRED_HEADERS if not _as_text(data.get(h))]
         if missing:
             raise ValueError(f"В строке не заполнено: {', '.join(missing)}")
 
@@ -164,91 +223,135 @@ class GoogleSheet:
         row[status_col] = data.get("Status") or self.NEW_ROW_STATUS
         return self._key(row), row
 
-    def _changed_ranges(self, row_number: int, current: list[str], desired: list) -> list[dict]:
-        """Диапазоны существующей строки, которые разошлись с базой.
+    def _differs(self, current: list[str], desired: list) -> bool:
+        """Разошлась ли строка с базой в тех столбцах, за которые отвечаем мы."""
+        return any(
+            _as_text(current[col]) != _as_text(desired[col])
+            for col, header in enumerate(self.HEADERS)
+            if header not in self.MANUAL_HEADERS
+        )
 
-        Столбцы из MANUAL_HEADERS всегда считаем совпавшими — их не сверяем
-        и не пишем. Соседние изменившиеся ячейки собираем в один диапазон,
-        чтобы batch_update не раздувался.
+    def _layout(self, ordered: list[list], extra: list[list], group_header: str) -> list[list]:
+        """Тело листа: строки в присланном порядке, между группами — пустая строка.
+
+        Группа — это значение столбца group_header (для листа товара «Размер»,
+        для сводного — номер заказа). Разделитель ставится там, где оно меняется.
+
+        Строки, которых в выгрузке больше нет, кладём в самый конец: удалять
+        чужую работу выгрузка не должна, но и в отсортированной части им не место.
         """
-        updates: list[dict] = []
-        start: int | None = None
+        blank = [""] * len(self.HEADERS)
+        column = self.HEADERS.index(group_header)
 
-        def close(end: int) -> None:
-            updates.append({
-                "range": f"{rowcol_to_a1(row_number, start + 1)}:{rowcol_to_a1(row_number, end + 1)}",
-                "values": [desired[start:end + 1]],
-            })
+        body: list[list] = []
+        previous = None
+        for row in ordered:
+            group = size_group(row[column]) if group_header == "Размер" else _as_text(row[column])
+            if previous is not None and group != previous:
+                body.append(list(blank))
+            body.append(row)
+            previous = group
 
-        for col, header in enumerate(self.HEADERS):
-            owned = header not in self.MANUAL_HEADERS
-            if owned and _as_text(current[col]) != _as_text(desired[col]):
-                if start is None:
-                    start = col
-            elif start is not None:
-                close(col - 1)
-                start = None
-        if start is not None:
-            close(len(self.HEADERS) - 1)
-        return updates
+        if extra:
+            if body:
+                body.append(list(blank))
+            body.extend(extra)
+        return body
 
-    def sync_orders(self, title: str, rows: list[dict]) -> tuple[int, int]:
-        """Приводит лист товара в соответствие с базой.
+    def _write_body(self, title: str, body: list[list]) -> None:
+        """Записывает тело листа одним запросом, затирая хвост прошлого прохода."""
+        ws = self.ws(title)
+        blank = [""] * len(self.HEADERS)
+        # добиваем пустыми строками до прежней длины — иначе после сортировки
+        # внизу останутся строки, которых в новом теле уже нет
+        tail = max(0, self._body_len.get(title, 0) - len(body))
+        values = body + [list(blank) for _ in range(tail)]
+        if not values:
+            return
 
-        Незнакомый заказ дописывается в конец, знакомый — обновляется в тех
-        столбцах, за которые отвечаем мы (адрес поправили, трек-номер появился).
-        Возвращает (сколько добавили, сколько обновили).
+        first = HEADER_ROWS + 1
+        last = HEADER_ROWS + len(values)
+        self._ensure_grid(ws, last)
+        ws.update(
+            values=values,
+            range_name=f"A{first}:{rowcol_to_a1(last, len(self.HEADERS))}",
+            value_input_option=VALUE_INPUT,
+        )
+        # лист переложен — прежний слепок больше не описывает его
+        self._index_cache.pop(title, None)
+        self._body_len[title] = len(body)
 
-        Три запроса на лист в худшем случае: одно чтение (чтобы понять, что там
-        уже есть), один batch_update на правки и одна дозапись новых строк.
+    def sync_orders(self, title: str, rows: list[dict], group_header: str = "Размер") -> tuple[int, int]:
+        """Перекладывает лист под присланные строки. Возвращает (добавлено, обновлено).
+
+        Порядок строк — тот, в каком они пришли (сортирует их sheets_export);
+        между сменой группы кладётся пустая строка. Отметка о пошиве переезжает
+        к своей строке по ключу, так что сортировка её не путает.
+
+        Два запроса на лист: одно чтение и одна запись тела целиком.
         """
         if not rows:
             return 0, 0
 
-        index = self.index(title)  # заодно создаёт лист, если его ещё нет
-        fresh: list[list] = []
-        updates: list[dict] = []
-        updated_rows: set[int] = set()
+        existing = self.index(title)  # заодно создаёт лист, если его ещё нет
+        ordered: list[list] = []
+        seen: set[tuple[str, ...]] = set()
+        added = updated = 0
 
         for data in rows:
             key, row = self._row_for(data)
-            known = index.get(key)
+            if key in seen:
+                continue  # один и тот же заказ дважды в одной пачке
+            seen.add(key)
+
+            known = existing.get(key)
             if known is None:
-                fresh.append(row)
-                # Номер строки пока неизвестен — его назначит сам Google при
-                # дозаписи. None и означает «эту строку мы уже положили»:
-                # повторный вызов с тем же заказом её не задвоит и не полезет
-                # обновлять чужую строку по угаданному номеру.
-                index[key] = (None, row)
-                continue
+                added += 1
+            else:
+                _, current = known
+                # отметку о пошиве не выдумываем — переносим из таблицы
+                for col, header in enumerate(self.HEADERS):
+                    if header in self.MANUAL_HEADERS:
+                        row[col] = current[col]
+                if self._differs(current, row):
+                    updated += 1
+            ordered.append(row)
 
-            row_number, current = known
-            if row_number is None:
-                continue  # только что дописали в этом же проходе
+        # то, что было на листе, но в выгрузку не попало: отменённый заказ,
+        # строка, вписанная руками. Не наше дело её удалять — сдвигаем вниз.
+        extra = [values for key, (_, values) in existing.items() if key not in seen]
 
-            # Status/Цвет/Вес не выдумываем — оставляем то, что в таблице
-            for col, header in enumerate(self.HEADERS):
-                if header in self.MANUAL_HEADERS:
-                    row[col] = current[col]
-
-            changed = self._changed_ranges(row_number, current, row)
-            if changed:
-                updates.extend(changed)
-                updated_rows.add(row_number)
-                index[key] = (row_number, row)
-
-        if updates:
-            self.ws(title).batch_update(updates, value_input_option=VALUE_INPUT)
-        if fresh:
-            self.ws(title).append_rows(fresh, value_input_option=VALUE_INPUT)
-
-        return len(fresh), len(updated_rows)
+        self._write_body(title, self._layout(ordered, extra, group_header))
+        return added, updated
 
     def add_order(self, title: str, data: dict) -> bool:
         """Один заказ на лист товара.
 
         False — такой заказ на листе уже есть: второй строки он не получит,
-        вместо этого обновятся наши столбцы в существующей (см. KEY_HEADERS).
+        обновятся наши столбцы в существующей (ключ строки — см. KEY_HEADERS).
+
+        Порядок остальных строк при этом не восстанавливается: разложить лист
+        по размерам можно только зная все строки сразу, а тут их одна. Этим
+        занимается sync_orders, который зовёт полная выгрузка.
         """
-        added, _ = self.sync_orders(title, [data])
-        return added == 1
+        existing = self.index(title)
+        key, row = self._row_for(data)
+        known = existing.get(key)
+
+        if known is None:
+            self.ws(title).append_row(row, value_input_option=VALUE_INPUT)
+            self._index_cache.pop(title, None)
+            return True
+
+        row_number, current = known
+        for col, header in enumerate(self.HEADERS):
+            if header in self.MANUAL_HEADERS:
+                row[col] = current[col]
+        if self._differs(current, row):
+            self.ws(title).update(
+                values=[row],
+                range_name=f"A{row_number}:{rowcol_to_a1(row_number, len(self.HEADERS))}",
+                value_input_option=VALUE_INPUT,
+            )
+            self._index_cache.pop(title, None)
+        return False

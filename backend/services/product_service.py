@@ -93,6 +93,8 @@ class ProductService:
             description=data.description,
             material=data.material,
             density=data.density,
+            color=data.color,
+            weight=data.weight,
             price=data.price,
             sort_order=data.sort_order if data.sort_order is not None else await self._next_sort_order(),
             is_hidden=data.is_hidden,
@@ -142,6 +144,8 @@ class ProductService:
         product.description = data.description
         product.material = data.material
         product.density = data.density
+        product.color = data.color
+        product.weight = data.weight
         product.price = data.price
         product.is_hidden = data.is_hidden
         product.size_columns = data.size_columns

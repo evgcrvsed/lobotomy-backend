@@ -4,7 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
-from backend.schemas.product import ProductCreate, ProductResponse, ProductVisibilityUpdate
+from backend.schemas.product import (
+    ProductAdminResponse,
+    ProductCreate,
+    ProductResponse,
+    ProductVisibilityUpdate,
+)
 from backend.services.auth_service import get_current_admin
 from backend.services.product_service import CollectionNotFoundError, ProductInOrdersError, ProductService
 
@@ -17,6 +22,15 @@ admin_only = [Depends(get_current_admin)]
 
 @router.get("/", response_model=list[ProductResponse])
 async def list_products(db: DbDep):
+    """Каталог для витрины. Цвет и вес сюда не попадают — они внутренние."""
+    return await ProductService(db).list_all()
+
+
+# Объявлен раньше "/{product_id}" — иначе слово "admin" уйдёт туда как число
+@router.get("/admin", response_model=list[ProductAdminResponse], dependencies=admin_only)
+async def list_products_for_admin(db: DbDep):
+    """Тот же каталог, но с цветом и весом: их правят в админке и по ним
+    собирается выгрузка на отшив."""
     return await ProductService(db).list_all()
 
 
@@ -37,7 +51,7 @@ async def get_product(product_id: int, db: DbDep):
     return product
 
 
-@router.post("/", response_model=ProductResponse, status_code=status.HTTP_201_CREATED, dependencies=admin_only)
+@router.post("/", response_model=ProductAdminResponse, status_code=status.HTTP_201_CREATED, dependencies=admin_only)
 async def create_product(data: ProductCreate, db: DbDep):
     try:
         return await ProductService(db).create(data)
@@ -45,7 +59,7 @@ async def create_product(data: ProductCreate, db: DbDep):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
-@router.put("/{product_id}", response_model=ProductResponse, dependencies=admin_only)
+@router.put("/{product_id}", response_model=ProductAdminResponse, dependencies=admin_only)
 async def update_product(product_id: int, data: ProductCreate, db: DbDep):
     try:
         product = await ProductService(db).update(product_id, data)
@@ -56,7 +70,7 @@ async def update_product(product_id: int, data: ProductCreate, db: DbDep):
     return product
 
 
-@router.patch("/{product_id}/visibility", response_model=ProductResponse, dependencies=admin_only)
+@router.patch("/{product_id}/visibility", response_model=ProductAdminResponse, dependencies=admin_only)
 async def set_product_visibility(product_id: int, data: ProductVisibilityUpdate, db: DbDep):
     product = await ProductService(db).set_hidden(product_id, data.is_hidden)
     if product is None:
