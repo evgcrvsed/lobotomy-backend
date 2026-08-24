@@ -97,12 +97,6 @@ class ProductVisibilityUpdate(BaseModel):
 
 
 class ProductResponse(BaseModel):
-    """Публичный вид товара — то, что уходит на витрину.
-
-    Цвета и веса здесь нет намеренно: это внутренние поля для отшива,
-    и посетителю сайта их видеть незачем. Админке их отдаёт ProductAdminResponse.
-    """
-
     id: int
     collection_id: int
     name: str
@@ -110,6 +104,11 @@ class ProductResponse(BaseModel):
     description: str | None
     material: str | None
     density: int | None
+    # Служебные поля для выгрузки на отшив. Витрина их не показывает, но и прятать
+    # от неё нечего: цвет и вес вещи — не секрет, а отдельная схема с отдельным
+    # эндпоинтом ради них стоила бы дороже, чем даёт.
+    color: str | None
+    weight: str | None
     price: int
     sort_order: int
     is_hidden: bool
@@ -118,10 +117,3 @@ class ProductResponse(BaseModel):
     sizes: list[ProductSizeResponse]
 
     model_config = {"from_attributes": True}
-
-
-class ProductAdminResponse(ProductResponse):
-    """То же плюс поля для отшива — отдаётся только под админским токеном."""
-
-    color: str | None
-    weight: str | None
