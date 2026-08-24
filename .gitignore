@@ -10,3 +10,5 @@ __pycache__/
 .env
 /.claude
 /static/originals/
+# ключи сервисных аккаунтов (Google) — в репозиторий не кладём
+/secrets/

@@ -9,3 +9,5 @@ sqlalchemy[asyncio]
 asyncpg
 pydantic-settings
 alembic
+gspread
+google-auth

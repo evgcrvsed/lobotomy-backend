@@ -70,6 +70,20 @@ class Settings(BaseSettings):
     cdek_request_delay_seconds: float = 1.0
     cdek_backoff_minutes: int = 60  # пауза после 429, прежде чем пробовать снова
 
+    # Google-таблица — выгрузка проданных позиций (лист на товар, строка на заказ).
+    # Пустой google_sheets_id — выгрузка выключена, как и СДЭК без client_id.
+    google_sheets_id: str = ""
+    # Ключ сервисного аккаунта Google. Лежит рядом с компоузом в secrets/ и
+    # подключается контейнерам томом: в образ приватный ключ вшивать нельзя,
+    # а так его можно заменить, ничего не пересобирая.
+    google_sheets_key_file: Path = ROOT_DIR / "secrets" / "lobotomy-bot.json"
+    # Как часто воркер заглядывает в очередь задач. Запрос дешёвый (своя же база),
+    # но человек, нажавший кнопку, ждёт — поэтому секунды, а не минуты.
+    sheets_poll_interval_seconds: int = 3
+    # Пауза между листами: у Sheets API лимит примерно 60 запросов в минуту,
+    # а один лист стоит два-три (прочитать выгруженные Order ID, дописать строки).
+    sheets_request_delay_seconds: float = 0.5
+
     order_ip_limit_10min: int = 10
     # по истечении срока неоплаченный заказ отменяется
     pending_order_ttl_minutes: int = 60

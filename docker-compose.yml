@@ -24,6 +24,8 @@ services:
   backend:
     container_name: lobotomy-backend
     build: .
+    # Явное имя образа: его же переиспользует cdek-worker, отдельного образа под воркер нет
+    image: lobotomy-backend
     restart: unless-stopped
     ports:
       - "127.0.0.1:8000:8000"
@@ -47,14 +49,76 @@ services:
       # СДЭК — автообновление статусов заказов по трек-номеру
       CDEK_CLIENT_ID: ${CDEK_CLIENT_ID:-}
       CDEK_CLIENT_SECRET: ${CDEK_CLIENT_SECRET:-}
+      # Google-таблица — сюда выгружаются проданные позиции. Backend в Google не
+      # ходит, но проверяет настройки перед тем, как ставить задачу в очередь.
+      GOOGLE_SHEETS_ID: ${GOOGLE_SHEETS_ID:-}
     volumes:
       # Загруженные через админку фото должны переживать пересборку контейнера
       - static_images:/app/static/images
       # Оригиналы, отложенные скриптом сжатия
       - static_originals:/app/static/originals
+      # Ключ Google: backend в таблицу не ходит, но проверяет, что ключ на месте,
+      # прежде чем ставить задачу в очередь — иначе кнопка вешала бы её впустую
+      - ./secrets:/app/secrets:ro
     depends_on:
       db:
         condition: service_healthy
+
+  # Автообновление статусов заказов по трек-номерам СДЭК.
+  # Раньше жило asyncio-задачей внутри backend; вынесено отдельным процессом,
+  # чтобы рестарт API не обрывал проход опроса и чтобы логи не смешивались.
+  # База общая с backend — это разделение по процессам, а не по данным.
+  cdek-worker:
+    container_name: lobotomy-cdek-worker
+    build: .
+    image: lobotomy-backend
+    # Тот же образ, другая точка входа
+    command: ["python", "-m", "backend.workers.cdek"]
+    # on-failure, а не unless-stopped: без ключей СДЭК воркер осознанно выходит
+    # с кодом 0, и перезапускать его по кругу незачем. Настоящий сбой вернёт
+    # ненулевой код и будет перезапущен.
+    restart: on-failure
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/lobotomy
+      # СДЭК — единственная внешняя система, которая нужна этому процессу.
+      # Пустой CLIENT_ID — воркер сразу завершится с понятной строкой в логе.
+      CDEK_CLIENT_ID: ${CDEK_CLIENT_ID:-}
+      CDEK_CLIENT_SECRET: ${CDEK_CLIENT_SECRET:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      # Схему создаёт backend. service_started даёт лишь порядок запуска,
+      # поэтому воркер дополнительно ждёт таблицу сам — wait_for_schema().
+      backend:
+        condition: service_started
+
+  # Выгрузка заказов в Google-таблицу: лист на товар, строка на заказ.
+  # Кнопка в админке кладёт задачу в таблицу export_jobs, этот процесс её забирает.
+  # Отдельно от backend по двум причинам: gspread синхронный (в event loop API он
+  # вставал бы поперёк запросов) и выгрузка — это минуты походов в чужой API.
+  sheets-worker:
+    container_name: lobotomy-sheets-worker
+    build: .
+    image: lobotomy-backend
+    # Тот же образ, другая точка входа — как у cdek-worker
+    command: ["python", "-m", "backend.workers.sheets"]
+    # on-failure: без GOOGLE_SHEETS_ID воркер осознанно выходит с кодом 0
+    restart: on-failure
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/lobotomy
+      # Единственная внешняя система этого процесса. Пусто — сразу выходит
+      # с понятной строкой в логе, а кнопка в админке вернёт 503.
+      GOOGLE_SHEETS_ID: ${GOOGLE_SHEETS_ID:-}
+    volumes:
+      # Ключ сервисного аккаунта: в образе его нет (см. .dockerignore),
+      # подкладывается отсюда — так его меняют без пересборки
+      - ./secrets:/app/secrets:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      # Схему создаёт backend; воркер дополнительно ждёт таблицу сам — wait_for_schema()
+      backend:
+        condition: service_started
 
   frontend:
     container_name: lobotomy-frontend

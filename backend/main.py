@@ -1,7 +1,6 @@
-import asyncio
 import json
 from collections import defaultdict
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +15,7 @@ from backend.routers import (
     AuthRouter,
     CollectionsRouter,
     DeliveryRouter,
+    ExportsRouter,
     PaymentsRouter,
     ProductsRouter,
     PromoCodesRouter,
@@ -24,7 +24,6 @@ from backend.routers import (
     VisitsRouter,
 )
 from backend.services import slugify
-from backend.services.cdek_sync import poll_forever
 from backend.services.product_service import ProductService
 
 
@@ -239,14 +238,9 @@ async def lifespan(app: FastAPI):
     await _backfill_size_measurements()
     await _backfill_payment_attempts()
 
-    # Фоновый опрос СДЭК: сам решает, кого и когда проверять
-    cdek_task = asyncio.create_task(poll_forever())
-    try:
-        yield
-    finally:
-        cdek_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await cdek_task
+    # Опрос статусов СДЭК живёт отдельным процессом (backend/workers/cdek.py):
+    # рестарт API больше не обрывает проход, а логи опроса не мешаются с логом запросов.
+    yield
 
 
 setup_logging(settings.debug)
@@ -279,4 +273,5 @@ app.include_router(AuthRouter)
 app.include_router(PaymentsRouter)
 app.include_router(DeliveryRouter)
 app.include_router(SettingsRouter)
+app.include_router(ExportsRouter)
 app.include_router(VisitsRouter)
