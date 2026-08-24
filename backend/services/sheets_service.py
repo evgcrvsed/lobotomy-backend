@@ -153,10 +153,11 @@ class GoogleSheet:
         if unknown:
             raise KeyError(f"Неизвестные поля: {', '.join(sorted(unknown))}")
 
-        if not _as_text(data.get(self.ID_HEADER)):
-            # Без номера строку не отличить от уже выгруженной — а значит,
-            # следующая выгрузка добавила бы её второй раз. Лучше упасть сразу.
-            raise ValueError(f"В строке нет поля «{self.ID_HEADER}»")
+        # Пустое поле ключа — это тихая беда: строку не с чем сопоставить, и
+        # каждая выгрузка добавляла бы её заново. Лучше упасть сразу и громко.
+        missing = [h for h in self.KEY_HEADERS if not _as_text(data.get(h))]
+        if missing:
+            raise ValueError(f"В строке не заполнено: {', '.join(missing)}")
 
         row = [data.get(h, "") for h in self.HEADERS]
         status_col = self.HEADERS.index("Status")
