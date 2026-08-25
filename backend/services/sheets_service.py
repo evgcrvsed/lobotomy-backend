@@ -20,6 +20,7 @@ gspread работает синхронно (внутри requests), поэто�
 напрямую нельзя — см. asyncio.to_thread в sheets_export.py.
 """
 
+from collections import defaultdict
 from pathlib import Path
 
 import gspread
@@ -111,13 +112,29 @@ class GoogleSheet:
         "Адрес доставки", "Способ доставки", "Трек отправки",
     ]
 
-    # Чем строка опознаётся при повторной выгрузке: заказ, товар, цвет и размер.
-    # На листе товара «Товар» одинаков во всех строках, так что по сути ключ —
-    # это заказ плюс то, что в нём взяли. Цвет нужен потому, что две футболки
-    # разного цвета — два товара с одинаковым названием; размер — потому что
-    # одну и ту же вещь берут в двух размерах, и это две разные строки.
+    # Чем строка опознаётся при повторной выгрузке.
+    #
+    # Правило, оплаченное двумя багами: в опознании не должно участвовать ничего,
+    # что правят задним числом. Цвет и вес меняют в карточке товара, размер —
+    # прямо в заказе; пока они были частью ключа, любая такая правка означала
+    # «это другая строка»: прежняя уезжала вниз листа, рядом появлялась новая.
+    #
+    # Поэтому ключ не один, а лесенка — от точного к самому грубому. Строку ищем
+    # сначала точным, остаток — всё более широким; что нашлось, то и перезаписываем.
+    # Последняя ступень (заказ + товар) и есть то, что нужно: «сверяйся по заказу,
+    # остальное просто обнови».
+    #
+    # Точная ступень нужна ради одного случая: две футболки разного цвета — это
+    # два товара с одинаковым названием, и если обе взяли в одном заказе, различить
+    # их строки больше нечем. Она разбирается первой, поэтому широкие ступени
+    # не могут увести чужую строку. См. _match.
+    KEY_LEVELS = (
+        ("Order ID", "Товар", "Цвет", "Размер"),  # ничего не трогали
+        ("Order ID", "Товар", "Размер"),          # поменяли цвет или вес товара
+        ("Order ID", "Товар"),                    # поменяли ещё и размер в заказе
+    )
     ID_HEADER = "Order ID"
-    KEY_HEADERS = ("Order ID", "Товар", "Цвет", "Размер")
+    KEY_HEADERS = KEY_LEVELS[0]
     # Из ключа обязательны только эти: цвет и размер часто пусты,
     # и пустые они — нормальная часть ключа, а не повод отказать
     REQUIRED_HEADERS = ("Order ID", "Товар")
@@ -205,6 +222,51 @@ class GoogleSheet:
             # размер сравниваем без количества: «M» и «M × 2» — одна и та же строка
             parts.append(size_group(value) if header == "Размер" else _as_text(value))
         return tuple(parts)
+
+    def _narrow(self, key: tuple[str, ...], level: tuple[str, ...]) -> tuple[str, ...]:
+        """Ключ, урезанный до одной ступени лесенки."""
+        return tuple(key[self.KEY_HEADERS.index(h)] for h in level)
+
+    def _match(
+        self,
+        prepared: list[tuple[tuple[str, ...], list]],
+        existing: dict[tuple[str, ...], tuple[int, list[str]]],
+    ) -> tuple[dict[int, tuple[str, ...]], set[tuple[str, ...]]]:
+        """Какая присланная строка какой строке листа соответствует.
+
+        Идём по ступеням KEY_LEVELS от точной к грубой. На каждой ступени
+        разбираем только то, что ещё не нашлось, и только среди строк, которые
+        ещё никем не заняты. Поэтому правка цвета, веса или размера не плодит
+        дубль: строка находится на более грубой ступени и перезаписывается,
+        а строки, совпавшие точно, у неё не отобрать.
+
+        Кандидаты внутри ступени разбираются по порядку строк на листе —
+        порядок присланных строк тоже определён (их сортирует sheets_export),
+        так что от прогона к прогону сопоставление одно и то же.
+
+        Возвращает (номер присланной строки -> ключ строки листа, занятые ключи).
+        """
+        matched: dict[int, tuple[str, ...]] = {}
+        claimed: set[tuple[str, ...]] = set()
+
+        for level in self.KEY_LEVELS:
+            leftovers = [i for i in range(len(prepared)) if i not in matched]
+            if not leftovers:
+                break
+
+            buckets: dict[tuple[str, ...], list[tuple[str, ...]]] = defaultdict(list)
+            for key in existing:
+                if key not in claimed:
+                    buckets[self._narrow(key, level)].append(key)
+
+            for i in leftovers:
+                candidates = buckets.get(self._narrow(prepared[i][0], level))
+                if candidates:
+                    found = candidates.pop(0)
+                    matched[i] = found
+                    claimed.add(found)
+
+        return matched, claimed
 
     def _row_for(self, data: dict) -> tuple[tuple[str, ...], list]:
         """Проверяет поля строки, раскладывает её по столбцам и считает ключ."""
@@ -294,21 +356,26 @@ class GoogleSheet:
             return 0, 0
 
         existing = self.index(title)  # заодно создаёт лист, если его ещё нет
-        ordered: list[list] = []
-        seen: set[tuple[str, ...]] = set()
-        added = updated = 0
 
+        prepared: list[tuple[tuple[str, ...], list]] = []
+        seen: set[tuple[str, ...]] = set()
         for data in rows:
             key, row = self._row_for(data)
             if key in seen:
                 continue  # один и тот же заказ дважды в одной пачке
             seen.add(key)
+            prepared.append((key, row))
 
-            known = existing.get(key)
-            if known is None:
+        matched, claimed = self._match(prepared, existing)
+
+        ordered: list[list] = []
+        added = updated = 0
+        for i, (_, row) in enumerate(prepared):
+            found = matched.get(i)
+            if found is None:
                 added += 1
             else:
-                _, current = known
+                _, current = existing[found]
                 # отметку о пошиве не выдумываем — переносим из таблицы
                 for col, header in enumerate(self.HEADERS):
                     if header in self.MANUAL_HEADERS:
@@ -319,7 +386,7 @@ class GoogleSheet:
 
         # то, что было на листе, но в выгрузку не попало: отменённый заказ,
         # строка, вписанная руками. Не наше дело её удалять — сдвигаем вниз.
-        extra = [values for key, (_, values) in existing.items() if key not in seen]
+        extra = [values for key, (_, values) in existing.items() if key not in claimed]
 
         self._write_body(title, self._layout(ordered, extra, group_header))
         return added, updated
@@ -336,14 +403,15 @@ class GoogleSheet:
         """
         existing = self.index(title)
         key, row = self._row_for(data)
-        known = existing.get(key)
+        matched, _ = self._match([(key, row)], existing)
+        found = matched.get(0)
 
-        if known is None:
+        if found is None:
             self.ws(title).append_row(row, value_input_option=VALUE_INPUT)
             self._index_cache.pop(title, None)
             return True
 
-        row_number, current = known
+        row_number, current = existing[found]
         for col, header in enumerate(self.HEADERS):
             if header in self.MANUAL_HEADERS:
                 row[col] = current[col]
