@@ -288,6 +288,22 @@ async def set_tracking(number: str, data: OrderTrackingUpdate, db: DbDep):
     return order
 
 
+@router.delete("/orders/{number}/items/{item_id}", response_model=OrderResponse, dependencies=admin_only)
+async def remove_order_item(number: str, item_id: int, db: DbDep):
+    """Убрать одну вещь из заказа. Сам заказ остаётся — для него своя кнопка.
+
+    Отдаём заказ целиком: у него пересчитались суммы, и странице проще
+    показать новый итог, чем собирать его самой.
+    """
+    try:
+        order = await OrderService(db).remove_item(number, item_id)
+    except OrderError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    if order is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Заказ не найден")
+    return order
+
+
 @router.get("/orders/{number}/payments", response_model=OrderPaymentsResponse, dependencies=admin_only)
 async def order_payments(number: str, db: DbDep):
     """Всё, что известно об оплате заказа — для ручной сверки с личным кабинетом банка."""

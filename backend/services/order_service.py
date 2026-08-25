@@ -340,6 +340,37 @@ class OrderService:
         await self.db.refresh(order, attribute_names=["items"])
         return order
 
+    async def remove_item(self, number: str, item_id: int) -> Order | None:
+        """Убирает одну позицию из заказа и пересчитывает суммы.
+
+        Отдельным действием, а не через admin_update: там список позиций служит
+        для правки размеров, и делать его ещё и «кого нет — того удалить» опасно —
+        любая ошибка на фронтенде молча вынесла бы состав заказа.
+
+        Последнюю позицию убрать нельзя: заказ без товаров — это не заказ,
+        такой надо удалять целиком (есть отдельная кнопка).
+        """
+        order = await self.get_by_number(number)
+        if order is None:
+            return None
+
+        item = next((i for i in order.items if i.id == item_id), None)
+        if item is None:
+            raise OrderError("Позиция не найдена в этом заказе")
+        if len(order.items) == 1:
+            raise OrderError("Это последняя позиция — удалите заказ целиком")
+
+        order.items.remove(item)
+        await self.db.delete(item)
+        # Деньги за неё уже могли прийти: возврат — забота админа, заказ лишь
+        # фиксирует, что покупатель в итоге получит.
+        order.items_total = sum(i.price * i.qty for i in order.items)
+        order.total = order.items_total + order.delivery_price
+
+        await self.db.commit()
+        await self.db.refresh(order, attribute_names=["items"])
+        return order
+
     async def list_for_user(self, user: User) -> list[Order]:
         await self._expire_stale_pending()
         result = await self.db.execute(
