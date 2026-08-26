@@ -29,6 +29,8 @@ from backend.services.cdek_sync import poll_forever
 REQUIRED_TABLE = "orders"
 SCHEMA_WAIT_SECONDS = 180
 SCHEMA_RETRY_SECONDS = 3
+# Как часто просыпается ненастроенный воркер — просто чтобы поймать сигнал
+IDLE_SLEEP_SECONDS = 3600
 
 
 async def wait_for_schema() -> bool:
@@ -63,6 +65,19 @@ async def wait_for_schema() -> bool:
     return False
 
 
+async def idle_forever(reason: str) -> None:
+    """Живём, но ничего не делаем.
+
+    Раньше в этом случае процесс просто выходил с кодом 0 — и при
+    restart: unless-stopped Docker поднимал бы его по кругу, засыпая лог одной
+    и той же строкой. Спящий контейнер честнее: в `docker compose ps` видно,
+    что сервис есть и почему он ничего не делает.
+    """
+    print(f"{reason} — воркер простаивает, работать не с чем")
+    while True:
+        await asyncio.sleep(IDLE_SLEEP_SECONDS)
+
+
 def install_shutdown(task: asyncio.Task) -> None:
     """SIGTERM от `docker stop` превращаем в отмену задачи.
 
@@ -82,15 +97,12 @@ async def main() -> None:
 
     if not is_configured():
         # Не ошибка, а осознанная конфигурация: без ключей опрашивать нечем.
-        # Контейнер завершится с кодом 0 и (при restart: on-failure) не будет
-        # перезапускаться по кругу — в логе останется одна внятная строка.
-        print("[cdek] воркер не запущен: не задан CDEK_CLIENT_ID")
-        return
-
-    if not await wait_for_schema():
-        raise SystemExit(1)
-
-    task = asyncio.create_task(poll_forever())
+        # Не выходим — иначе restart: unless-stopped поднимал бы контейнер по кругу.
+        task = asyncio.create_task(idle_forever("[cdek] не задан CDEK_CLIENT_ID"))
+    else:
+        if not await wait_for_schema():
+            raise SystemExit(1)
+        task = asyncio.create_task(poll_forever())
     install_shutdown(task)
     try:
         await task

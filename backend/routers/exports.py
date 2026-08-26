@@ -1,14 +1,16 @@
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.config import settings
 from backend.database import get_db
 from backend.models import ExportJob
-from backend.schemas.export import ExportJobResponse
+from backend.schemas.export import ExportJobResponse, SheetsExportStatus
 from backend.services.auth_service import get_current_admin
-from backend.services.sheets_export import configuration_problem
+from backend.services.sheets_export import configuration_problem, spreadsheet_url
 
 router = APIRouter(prefix="/api/export", tags=["export"])
 
@@ -17,6 +19,36 @@ admin_only = [Depends(get_current_admin)]
 
 # Задача считается незаконченной, пока воркер её не закрыл
 OPEN_STATUSES = ("pending", "running")
+
+
+async def _expire_abandoned(db: AsyncSession) -> None:
+    """Закрывает задачи, которые никто не доведёт до конца.
+
+    Воркер может не дойти до очереди вовсе (контейнер лежит) — тогда задача
+    навсегда остаётся pending, а кнопка в админке бесконечно показывает
+    «синхронизируем». Так и случилось на проде 26.08.2026. Сам воркер о таких
+    задачах ничего сказать не может — его нет, — поэтому подводит черту тот,
+    к кому админка приходит за статусом.
+
+    Окно с запасом: свой потолок у воркера меньше, так что в норме он успевает
+    закрыть задачу сам, и мы забираем только по-настоящему брошенные.
+    """
+    window = settings.sheets_job_timeout_minutes + settings.sheets_job_abandon_slack_minutes
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=window)
+    result = await db.execute(
+        update(ExportJob)
+        .where(ExportJob.status.in_(OPEN_STATUSES), ExportJob.created_at < cutoff)
+        .values(
+            status="error",
+            message=(
+                f"Выгрузка не завершилась за {window} мин. "
+                f"Проверьте контейнер sheets-worker: docker compose ps"
+            ),
+            finished_at=datetime.now(timezone.utc),
+        )
+    )
+    if result.rowcount:
+        await db.commit()
 
 
 async def _last_job(db: AsyncSession) -> ExportJob | None:
@@ -40,6 +72,8 @@ async def start_sheets_export(db: DbDep):
             detail=f"Выгрузка не настроена: {problem}",
         )
 
+    await _expire_abandoned(db)
+
     # Уже стоит в очереди или выполняется — отдаём её же, а не плодим вторую:
     # два одновременных прохода по одной таблице только жгли бы лимиты Google
     result = await db.execute(
@@ -59,8 +93,9 @@ async def start_sheets_export(db: DbDep):
     return job
 
 
-@router.get("/sheets", response_model=ExportJobResponse | None, dependencies=admin_only)
+@router.get("/sheets", response_model=SheetsExportStatus, dependencies=admin_only)
 async def sheets_export_status(db: DbDep):
-    """Последняя выгрузка: её и опрашивает админка, пока задача не закроется.
-    None — выгрузку ещё ни разу не запускали."""
-    return await _last_job(db)
+    """Что показывать в админке: последняя задача и адрес самой таблицы.
+    Этот же эндпоинт админка опрашивает, пока задача не закроется."""
+    await _expire_abandoned(db)
+    return SheetsExportStatus(sheet_url=spreadsheet_url(), job=await _last_job(db))

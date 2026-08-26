@@ -53,6 +53,22 @@ class SheetsNotConfigured(Exception):
     pass
 
 
+class SheetsExportTimeout(Exception):
+    pass
+
+
+def spreadsheet_url() -> str | None:
+    """Ссылка на саму таблицу — по ней в админке открывают выгрузку.
+
+    Собираем из настройки, а не держим готовый адрес во фронтенде: id таблицы
+    живёт в .env, таблицу пересоздают, и второй его экземпляр разъехался бы
+    с первым молча.
+    """
+    if not settings.google_sheets_id:
+        return None
+    return f"https://docs.google.com/spreadsheets/d/{settings.google_sheets_id}/edit"
+
+
 def configuration_problem() -> str | None:
     """Человеческая причина, по которой выгрузка невозможна. None — всё на месте."""
     if not settings.google_sheets_id:
@@ -188,7 +204,11 @@ def _push_sync(pages: dict[str, list[dict]]) -> tuple[int, int, int]:
 
     Возвращает (сколько листов прошли, добавлено строк, обновлено строк).
     """
-    sheet = GoogleSheet(settings.google_sheets_key_file, settings.google_sheets_id)
+    sheet = GoogleSheet(
+        settings.google_sheets_key_file,
+        settings.google_sheets_id,
+        timeout=settings.sheets_request_timeout_seconds,
+    )
     added = updated = 0
     titles = sorted(pages)
     for i, title in enumerate(titles):
@@ -215,7 +235,20 @@ async def export_all() -> tuple[int, int, int]:
 
     if not pages:
         return 0, 0, 0
-    return await asyncio.to_thread(_push_sync, pages)
+
+    # Потолок на весь поход в Google. Сам поток отменить нельзя — asyncio.to_thread
+    # этого не умеет, — но управление вернётся, задача закроется с ошибкой,
+    # и воркер продолжит разбирать очередь вместо того чтобы стоять навсегда.
+    # Поток при этом не бессмертен: его добьёт таймаут запроса (см. GoogleSheet).
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(_push_sync, pages),
+            timeout=settings.sheets_job_timeout_minutes * 60,
+        )
+    except TimeoutError:
+        raise SheetsExportTimeout(
+            f"Google не ответил за {settings.sheets_job_timeout_minutes} мин — выгрузка прервана"
+        ) from None
 
 
 async def _claim_job(db: AsyncSession) -> ExportJob | None:
@@ -240,6 +273,7 @@ async def run_pending_job() -> bool:
             return False
 
         print(f"[sheets] задача #{job.id}: начали выгрузку")
+        started = time.monotonic()
         try:
             pages, added, updated = await export_all()
         except asyncio.CancelledError:
@@ -252,12 +286,13 @@ async def run_pending_job() -> bool:
         except Exception as e:  # noqa: BLE001 — в задачу пишем любую причину, цикл живёт дальше
             job.status = "error"
             job.message = f"{type(e).__name__}: {e}"[:MESSAGE_LIMIT]
-            print(f"[sheets] задача #{job.id}: ошибка — {job.message}")
+            print(f"[sheets] задача #{job.id}: ошибка за {time.monotonic() - started:.0f} с — {job.message}")
         else:
             job.status = "done"
             job.rows_added = added
             job.message = f"листов {pages}, новых заказов {added}, обновлено {updated}"
-            print(f"[sheets] задача #{job.id}: {job.message}")
+            # время в лог: по нему видно, когда выгрузка начнёт подбираться к потолку
+            print(f"[sheets] задача #{job.id}: {job.message} (за {time.monotonic() - started:.0f} с)")
 
         job.finished_at = datetime.now(timezone.utc)
         await db.commit()

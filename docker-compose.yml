@@ -74,10 +74,13 @@ services:
     image: lobotomy-backend
     # Тот же образ, другая точка входа
     command: ["python", "-m", "backend.workers.cdek"]
-    # on-failure, а не unless-stopped: без ключей СДЭК воркер осознанно выходит
-    # с кодом 0, и перезапускать его по кругу незачем. Настоящий сбой вернёт
-    # ненулевой код и будет перезапущен.
-    restart: on-failure
+    # unless-stopped, а не on-failure. Раньше стояло on-failure ради одного случая:
+    # без ключей воркер осознанно выходит с кодом 0, и крутить его незачем.
+    # Но с тем же кодом 0 он выходит и после SIGTERM — а значит после любого
+    # сигнала (перезапуск демона, пересоздание соседей) больше не поднимался
+    # и молча лежал. Случай «нет ключей» теперь решается иначе: воркер не выходит,
+    # а спит — см. idle_forever в backend/workers/.
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/lobotomy
       # СДЭК — единственная внешняя система, которая нужна этому процессу.
@@ -102,8 +105,10 @@ services:
     image: lobotomy-backend
     # Тот же образ, другая точка входа — как у cdek-worker
     command: ["python", "-m", "backend.workers.sheets"]
-    # on-failure: без GOOGLE_SHEETS_ID воркер осознанно выходит с кодом 0
-    restart: on-failure
+    # unless-stopped — см. разбор у cdek-worker. Именно из-за on-failure этот
+    # контейнер однажды лёг после сигнала, и кнопка в админке «синхронизировала»
+    # бесконечно: задача висела в pending, потому что забирать её было некому.
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/lobotomy
       # Единственная внешняя система этого процесса. Пусто — сразу выходит

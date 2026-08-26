@@ -29,6 +29,8 @@ from backend.services.sheets_export import configuration_problem, poll_forever, 
 REQUIRED_TABLE = "export_jobs"
 SCHEMA_WAIT_SECONDS = 180
 SCHEMA_RETRY_SECONDS = 3
+# Как часто просыпается ненастроенный воркер — просто чтобы поймать сигнал
+IDLE_SLEEP_SECONDS = 3600
 
 
 async def wait_for_schema() -> bool:
@@ -60,6 +62,19 @@ async def wait_for_schema() -> bool:
     return False
 
 
+async def idle_forever(reason: str) -> None:
+    """Живём, но ничего не делаем.
+
+    Раньше в этом случае процесс просто выходил с кодом 0 — и при
+    restart: unless-stopped Docker поднимал бы его по кругу, засыпая лог одной
+    и той же строкой. Спящий контейнер честнее: в `docker compose ps` видно,
+    что сервис есть и почему он ничего не делает.
+    """
+    print(f"{reason} — воркер простаивает, работать не с чем")
+    while True:
+        await asyncio.sleep(IDLE_SLEEP_SECONDS)
+
+
 def install_shutdown(task: asyncio.Task) -> None:
     """SIGTERM от `docker stop` превращаем в отмену задачи.
 
@@ -79,17 +94,14 @@ async def main() -> None:
 
     problem = configuration_problem()
     if problem is not None:
-        # Не ошибка, а осознанная конфигурация — как cdek-воркер без ключей.
-        # Выходим с кодом 0, чтобы restart: on-failure не крутил контейнер по кругу.
-        print(f"[sheets] воркер не запущен: {problem}")
-        return
-
-    if not await wait_for_schema():
-        raise SystemExit(1)
-
-    await reset_stale_jobs()
-
-    task = asyncio.create_task(poll_forever())
+        # Не ошибка, а осознанная конфигурация. Не выходим: контейнер должен
+        # остаться поднятым, иначе перезапуск по политике станет бесконечным.
+        task = asyncio.create_task(idle_forever(f"[sheets] {problem}"))
+    else:
+        if not await wait_for_schema():
+            raise SystemExit(1)
+        await reset_stale_jobs()
+        task = asyncio.create_task(poll_forever())
     install_shutdown(task)
     try:
         await task

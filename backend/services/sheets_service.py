@@ -63,6 +63,39 @@ RANK_UNKNOWN = len(SIZE_ORDER) + 1
 RANK_EMPTY = len(SIZE_ORDER) + 2
 
 
+def _apply_timeout(client, seconds: int) -> None:
+    """Ограничивает время одного запроса к Google.
+
+    Без этого gspread ждёт ответа бесконечно: requests без timeout висит на
+    зависшем коннекте столько, сколько живёт сокет. Один такой запрос подвесил бы
+    всю выгрузку — поток не вернулся бы, задача навсегда осталась «в работе».
+
+    Способ ставить таймаут у gspread переезжал между версиями, поэтому пробуем
+    и клиент, и его http_client, а если ни там ни там — правим саму сессию.
+    """
+    http_client = getattr(client, "http_client", None)
+    for holder in (client, http_client):
+        setter = getattr(holder, "set_timeout", None)
+        if callable(setter):
+            setter(seconds)
+            return
+
+    for holder in (client, http_client):
+        session = getattr(holder, "session", None)
+        if session is None:
+            continue
+        original = session.request
+
+        def with_timeout(*args, _original=original, **kwargs):
+            kwargs.setdefault("timeout", seconds)
+            return _original(*args, **kwargs)
+
+        session.request = with_timeout
+        return
+
+    print(f"[sheets] не удалось ограничить время запросов gspread {gspread.__version__}")
+
+
 def rgb(r: int, g: int, b: int) -> dict:
     return {"red": r / 255, "green": g / 255, "blue": b / 255}
 
@@ -145,11 +178,14 @@ class GoogleSheet:
     MANUAL_HEADERS = ("Status",)
     NEW_ROW_STATUS = "Не пошито"
 
-    def __init__(self, key_file: str | Path, spreadsheet_id: str) -> None:
+    def __init__(self, key_file: str | Path, spreadsheet_id: str, timeout: int | None = None) -> None:
         creds = Credentials.from_service_account_file(
             filename=str(key_file), scopes=SCOPES
         )
-        self.sh = gspread.authorize(creds).open_by_key(spreadsheet_id)
+        client = gspread.authorize(creds)
+        if timeout:
+            _apply_timeout(client, timeout)
+        self.sh = client.open_by_key(spreadsheet_id)
         self._ws_cache: dict[str, gspread.Worksheet] = {}
         # Содержимое листов: {лист: {ключ строки: (номер строки, значения)}}.
         # Читаем лист один раз за проход — не ради скорости, а ради лимитов
