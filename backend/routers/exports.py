@@ -42,7 +42,7 @@ async def _expire_abandoned(db: AsyncSession) -> None:
             status="error",
             message=(
                 f"Выгрузка не завершилась за {window} мин. "
-                f"Проверьте контейнер sheets-worker: docker compose ps"
+                f"Чёто пиздец, надо контейнер sheets-worker чекать."
             ),
             finished_at=datetime.now(timezone.utc),
         )
