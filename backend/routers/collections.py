@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
@@ -19,7 +19,8 @@ admin_only = [Depends(get_current_admin)]
 
 
 @router.get("/", response_model=list[CollectionResponse])
-async def list_collections(db: DbDep):
+async def list_collections(db: DbDep, response: Response):
+    response.headers["Cache-Control"] = "private, max-age=300"
     return await CollectionService(db).list_all()
 
 

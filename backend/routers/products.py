@@ -17,7 +17,7 @@ admin_only = [Depends(get_current_admin)]
 
 @router.get("/", response_model=list[ProductResponse])
 async def list_products(db: DbDep, response: Response):
-    response.headers["Cache-Control"] = "private, max-age=300"
+    response.headers["Cache-Control"] = "private, max-age=60"
     return await ProductService(db).list_all()
 
 
