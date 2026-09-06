@@ -20,7 +20,7 @@ admin_only = [Depends(get_current_admin)]
 
 @router.get("/", response_model=list[CollectionResponse])
 async def list_collections(db: DbDep, response: Response):
-    response.headers["Cache-Control"] = "private, max-age=300"
+    response.headers["Cache-Control"] = "private, max-age=60"
     return await CollectionService(db).list_all()
 
 

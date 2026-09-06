@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,8 +19,9 @@ class SettingUpdate(BaseModel):
 
 
 @router.get("/", response_model=dict[str, str])
-async def get_settings(db: DbDep):
+async def get_settings(db: DbDep, response: Response):
     """Тексты витрины — нужны публично, их показывают обычным посетителям."""
+    response.headers["Cache-Control"] = "private, max-age=60"
     return await SettingsService(db).get_all()
 
 
