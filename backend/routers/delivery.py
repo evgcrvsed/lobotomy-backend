@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,7 +16,8 @@ admin_only = [Depends(get_current_admin)]
 
 
 @router.get("/", response_model=list[DeliveryMethodResponse])
-async def list_delivery_methods(db: DbDep):
+async def list_delivery_methods(db: DbDep, response: Response):
+    response.headers["Cache-Control"] = "private, max-age=300"
     result = await db.execute(select(DeliveryMethod).order_by(DeliveryMethod.sort_order))
     return list(result.scalars())
 
