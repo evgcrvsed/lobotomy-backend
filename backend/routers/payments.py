@@ -23,6 +23,7 @@ from backend.services.auth_service import client_ip, get_current_admin, get_curr
 from backend.services.cdek_service import CdekError
 from backend.services.cdek_sync import sync_order
 from backend.services.email_service import EmailNotConfiguredError, EmailSendError
+from backend.services.order_email import send_tracking_notice
 from backend.services.order_service import OrderError, OrderService
 from backend.services.payment_log_service import PaymentLogService
 from backend.services.stats_service import StatsError, StatsService, resolve_period
@@ -286,6 +287,26 @@ async def set_tracking(number: str, data: OrderTrackingUpdate, db: DbDep):
     if order is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Заказ не найден")
     return order
+
+
+@router.post("/orders/{number}/tracking-email", status_code=status.HTTP_204_NO_CONTENT, dependencies=admin_only)
+async def send_tracking_email(number: str, data: OrderTrackingUpdate, db: DbDep):
+    """Письмо покупателю с трек-номером — по кнопке в админке.
+
+    Ничего не сохраняет и не проверяет: трек берётся из тела запроса (то, что
+    сейчас в поле), заказ не меняется. Отметки об отправке нет — письмо можно
+    послать ещё раз, если трек поменялся или покупатель его не увидел.
+    """
+    order = await OrderService(db).get_by_number(number)
+    if order is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Заказ не найден")
+
+    try:
+        await send_tracking_notice(order, (data.tracking_number or "").strip())
+    except EmailNotConfiguredError as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+    except EmailSendError as e:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
 
 
 @router.delete("/orders/{number}/items/{item_id}", response_model=OrderResponse, dependencies=admin_only)

@@ -3,10 +3,8 @@ FROM python:3.12-slim
 # Без этого print() буферизуется и сообщения не попадают в docker logs
 ENV PYTHONUNBUFFERED=1
 
-# Рабочая директория внутри контейнера
 WORKDIR /app
 
-# Копируем всё необходимое
 COPY backend/ ./backend/
 COPY static/ ./static/
 COPY requirements.txt .
@@ -28,5 +26,4 @@ open(bundle, 'a', encoding='utf-8').write('\n' + root + '\n' + sub + '\n')"
 # Открываем порт
 EXPOSE 8000
 
-# Запуск
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

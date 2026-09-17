@@ -143,3 +143,61 @@ async def send_order_confirmation(order: Order, delivery: DeliveryMethod | None)
         html=build_html(order, delivery),
         from_address=f'"LOBOTOMY" <{settings.email_from_orders}>',
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Письмо с трек-номером. Уходит по кнопке «Отпр. на почту» в админке — руками,
+# не само: только владелец знает, что посылка действительно уехала.
+#
+# ТЕКСТ ПИСЬМА РЕДАКТИРУЕТСЯ ТУТ — в четырёх константах ниже. Всё, что под ними,
+# это вёрстка, её трогать не обязательно. В TRACKING_SUBJECT и TRACKING_INTRO
+# можно вставить {number} — подставится номер заказа.
+# ─────────────────────────────────────────────────────────────────────────────
+
+TRACKING_SUBJECT = "Заказ {number} отправлен — LOBOTOMY"
+
+TRACKING_INTRO = "Заказ {number} уехал. Ниже трек-номер — по нему видно, где посылка."
+
+TRACKING_NOTE = (
+    "Перевозчик показывает посылку не сразу: обычно трек начинает отслеживаться "
+    "в течение суток после отправки."
+)
+
+TRACKING_BUTTON = "Открыть заказ"
+
+
+def build_tracking_html(order: Order, tracking: str) -> str:
+    # Страница заказа — там же трек и статус доставки, которые обновляются сами
+    order_url = f"{settings.site_url}/order/{order.number}"
+
+    return f"""
+<div style="{_TEXT};max-width:520px;margin:0 auto;padding:8px">
+  <p style="font-size:15px;margin:0 0 18px">{escape(TRACKING_INTRO.format(number=order.number))}</p>
+
+  <div style="border:1px solid #e5e5e5;border-radius:8px;padding:18px 20px;margin-bottom:20px">
+    <div style="{_MUTED};text-transform:uppercase;letter-spacing:0.06em;font-size:11px">Трек-номер</div>
+    <div style="font-size:26px;font-weight:700;letter-spacing:2px;margin-top:4px">{escape(tracking)}</div>
+    <p style="{_MUTED};margin:12px 0 0">{escape(TRACKING_NOTE)}</p>
+  </div>
+
+  <a href="{order_url}"
+     style="display:inline-block;padding:13px 26px;background:#111111;color:#ffffff;
+            text-decoration:none;border-radius:8px;font-size:15px">{escape(TRACKING_BUTTON)}</a>
+
+  <p style="{_MUTED};margin-top:26px">Заказ {order.number}</p>
+  <p style="{_MUTED};margin-top:4px">
+    <a href="{settings.site_url}" style="color:#888888">{settings.site_url}</a>
+  </p>
+</div>
+""".strip()
+
+
+async def send_tracking_notice(order: Order, tracking: str) -> None:
+    """Трек берём аргументом, а не из order.tracking_number: кнопка шлёт то,
+    что сейчас в поле админки, даже если его ещё не сохранили."""
+    await send_email(
+        to=order.email,
+        subject=TRACKING_SUBJECT.format(number=order.number),
+        html=build_tracking_html(order, tracking),
+        from_address=f'"LOBOTOMY" <{settings.email_from_orders}>',
+    )
