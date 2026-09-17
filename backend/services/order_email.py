@@ -7,6 +7,7 @@
 
 from datetime import timedelta, timezone
 from html import escape
+from urllib.parse import quote
 
 from backend.config import settings
 from backend.models import DeliveryMethod, Order
@@ -88,7 +89,7 @@ def build_html(order: Order, delivery: DeliveryMethod | None) -> str:
 
     return f"""
 <div style="{_TEXT};max-width:520px;margin:0 auto;padding:8px">
-  <p style="font-size:15px;margin:0 0 18px">Спасибо за заказ в <strong>LOBOTOMY</strong>. Оплата прошла.</p>
+  <p style="font-size:15px;margin:0 0 18px">Спасибо за заказ!</p>
 
   <div style="border:1px solid #e5e5e5;border-radius:8px;padding:18px 20px;margin-bottom:20px">
     <div style="{_MUTED};text-transform:uppercase;letter-spacing:0.06em;font-size:11px">Номер заказа</div>
@@ -127,7 +128,7 @@ def build_html(order: Order, delivery: DeliveryMethod | None) -> str:
 
   <p style="{_MUTED};margin-top:26px">
     Как только заказ отправится, у него появится трек-номер — он виден на странице заказа.
-    Если в данных ошибка, ответьте на это письмо или напишите нам в соцсетях.
+    Если в данных ошибка, то напишите нам в соцсетях.
   </p>
   <p style="{_MUTED};margin-top:18px">
     <a href="{settings.site_url}" style="color:#888888">{settings.site_url}</a>
@@ -149,55 +150,78 @@ async def send_order_confirmation(order: Order, delivery: DeliveryMethod | None)
 # Письмо с трек-номером. Уходит по кнопке «Отпр. на почту» в админке — руками,
 # не само: только владелец знает, что посылка действительно уехала.
 #
-# ТЕКСТ ПИСЬМА РЕДАКТИРУЕТСЯ ТУТ — в четырёх константах ниже. Всё, что под ними,
-# это вёрстка, её трогать не обязательно. В TRACKING_SUBJECT и TRACKING_INTRO
-# можно вставить {number} — подставится номер заказа.
+# ТЕКСТ ПИСЬМА РЕДАКТИРУЕТСЯ ТУТ: тема — в TRACKING_SUBJECT, заголовок —
+# в TRACKING_HEADING, подписи строк («Перевозчик», «Трек-номер» и остальные)
+# написаны прямо в build_tracking_html ниже. {number} подставится номером заказа.
 # ─────────────────────────────────────────────────────────────────────────────
 
-TRACKING_SUBJECT = "Заказ {number} отправлен — LOBOTOMY"
+TRACKING_SUBJECT = "Заказ {number}: появился трек-номер"
+TRACKING_HEADING = "Заказ {number}: появился трек-номер"
 
-TRACKING_INTRO = "Заказ {number} уехал. Ниже трек-номер — по нему видно, где посылка."
+# Телеграм поддержки — тот же, что в кружке «?» на сайте (src/components/SupportLink.jsx)
+SUPPORT_URL = "https://t.me/lobotomy_support"
 
-TRACKING_NOTE = (
-    "Перевозчик показывает посылку не сразу: обычно трек начинает отслеживаться "
-    "в течение суток после отправки."
-)
+# Страница отслеживания перевозчика; {tracking} заменяется на трек-номер.
+# Ключ — код способа доставки (delivery_methods.code). Способ, которого здесь
+# нет (СНГ), письмо не ломает: строки «Отследить» в нём просто не будет.
+CARRIER_TRACK_URLS = {
+    "cdek": "https://www.cdek.ru/ru/tracking/?order_id={tracking}",
+    "post": "https://www.pochta.ru/tracking?barcode={tracking}",
+}
 
-TRACKING_BUTTON = "Открыть заказ"
+_ROW = "font-size:15px;margin:0 0 6px"
+_ROW_LABEL = "color:#888888"
 
 
-def build_tracking_html(order: Order, tracking: str) -> str:
-    # Страница заказа — там же трек и статус доставки, которые обновляются сами
-    order_url = f"{settings.site_url}/order/{order.number}"
+def _row(label: str, value_html: str) -> str:
+    """Строка «Подпись: значение». value_html вставляется как есть — в нём ссылка."""
+    return f'<p style="{_ROW}"><span style="{_ROW_LABEL}">{escape(label)}:</span> {value_html}</p>'
+
+
+def _link(url: str, color: str = "#111111") -> str:
+    """Ссылка, видимый текст которой — сам адрес без «https://»: так его можно
+    прочитать и скопировать, даже если почтовый клиент вырежет разметку."""
+    return (
+        f'<a href="{escape(url, quote=True)}" style="color:{color}">'
+        f'{escape(url.split("://", 1)[-1])}</a>'
+    )
+
+
+def build_tracking_html(order: Order, delivery: DeliveryMethod | None, tracking: str) -> str:
+    # название перевозчика берём из способа доставки: его правит админ,
+    # и в письме должно стоять то же слово, что покупатель выбирал при заказе
+    carrier = delivery.label if delivery else order.delivery_method
+
+    template = CARRIER_TRACK_URLS.get(order.delivery_method)
+    # трек подставляется в строку запроса — пробел или кириллица сломали бы адрес
+    track_url = template.format(tracking=quote(tracking, safe="")) if template and tracking else None
+
+    rows = _row("Перевозчик", escape(carrier))
+    rows += _row("Трек-номер", f"<strong>{escape(tracking)}</strong>")
+    if track_url:
+        rows += _row("Отследить", _link(track_url))
 
     return f"""
 <div style="{_TEXT};max-width:520px;margin:0 auto;padding:8px">
-  <p style="font-size:15px;margin:0 0 18px">{escape(TRACKING_INTRO.format(number=order.number))}</p>
+  <p style="font-size:17px;font-weight:700;margin:0 0 20px">
+    {escape(TRACKING_HEADING.format(number=order.number))}</p>
 
-  <div style="border:1px solid #e5e5e5;border-radius:8px;padding:18px 20px;margin-bottom:20px">
-    <div style="{_MUTED};text-transform:uppercase;letter-spacing:0.06em;font-size:11px">Трек-номер</div>
-    <div style="font-size:26px;font-weight:700;letter-spacing:2px;margin-top:4px">{escape(tracking)}</div>
-    <p style="{_MUTED};margin:12px 0 0">{escape(TRACKING_NOTE)}</p>
-  </div>
+  {rows}
 
-  <a href="{order_url}"
-     style="display:inline-block;padding:13px 26px;background:#111111;color:#ffffff;
-            text-decoration:none;border-radius:8px;font-size:15px">{escape(TRACKING_BUTTON)}</a>
+  <p style="{_ROW};margin-top:22px">
+    <span style="{_ROW_LABEL}">По вопросам:</span> {_link(SUPPORT_URL)}</p>
 
-  <p style="{_MUTED};margin-top:26px">Заказ {order.number}</p>
-  <p style="{_MUTED};margin-top:4px">
-    <a href="{settings.site_url}" style="color:#888888">{settings.site_url}</a>
-  </p>
+  <p style="{_MUTED};margin-top:26px">{_link(settings.site_url, "#888888")}</p>
 </div>
 """.strip()
 
 
-async def send_tracking_notice(order: Order, tracking: str) -> None:
+async def send_tracking_notice(order: Order, delivery: DeliveryMethod | None, tracking: str) -> None:
     """Трек берём аргументом, а не из order.tracking_number: кнопка шлёт то,
     что сейчас в поле админки, даже если его ещё не сохранили."""
     await send_email(
         to=order.email,
         subject=TRACKING_SUBJECT.format(number=order.number),
-        html=build_tracking_html(order, tracking),
+        html=build_tracking_html(order, delivery, tracking),
         from_address=f'"LOBOTOMY" <{settings.email_from_orders}>',
     )

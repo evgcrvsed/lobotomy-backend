@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 from backend.config import settings
 from backend.models import DeliveryMethod, Order, OrderItem, Product, User
 from backend.schemas.order import OrderCreate
-from backend.services.order_email import send_order_confirmation
+from backend.services.order_email import send_order_confirmation, send_tracking_notice
 
 
 class OrderError(Exception):
@@ -171,6 +171,18 @@ class OrderService:
         order.confirmation_sent_at = datetime.now(timezone.utc)
         await self.db.commit()
         return True
+
+    async def send_tracking_email(self, order: Order, tracking: str) -> None:
+        """Письмо покупателю с трек-номером — по кнопке в админке.
+
+        Отметки в базе нет, в отличие от письма об оплате: отправить повторно
+        (трек поменялся, письмо не дошло) должно быть можно сколько угодно раз.
+        """
+        method = await self.db.execute(
+            select(DeliveryMethod).where(DeliveryMethod.code == order.delivery_method)
+        )
+        # способ доставки нужен ради названия перевозчика — оно правится в админке
+        await send_tracking_notice(order, method.scalar_one_or_none(), tracking)
 
     async def list_active(self) -> list[Order]:
         """Заказы, с которыми ещё есть работа.
