@@ -1,4 +1,5 @@
 import json
+import mimetypes
 from collections import defaultdict
 from contextlib import asynccontextmanager
 
@@ -267,6 +268,11 @@ app.add_middleware(
     # без этого браузер не отдаёт фронтенду код обращения из заголовка ответа
     expose_headers=["X-Request-ID"],
 )
+
+# В образе python:slim нет системного справочника типов (/etc/mime.types), а
+# встроенная таблица Python про webp не знает — без этого фото уходили бы как
+# application/octet-stream («непонятные байты»). Все загружаемые фото сейчас webp.
+mimetypes.add_type("image/webp", ".webp")
 
 app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="static")
 app.include_router(ProductsRouter)
