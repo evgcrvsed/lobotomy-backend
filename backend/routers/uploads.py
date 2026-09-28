@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
@@ -69,12 +69,17 @@ async def list_images(db: DbDep):
         if product_name not in names:
             names.append(product_name)
 
-    col_result = await db.execute(select(Collection.name, Collection.image).where(Collection.image.is_not(None)))
-    for col_name, col_image in col_result.all():
-        names = usage.setdefault(col_image, [])
-        label = f"Коллекция {col_name}"
-        if label not in names:
-            names.append(label)
+    col_result = await db.execute(select(Collection.name, Collection.image, Collection.image_mobile))
+    for col_name, col_image, col_image_mobile in col_result.all():
+        for filename, label in (
+            (col_image, f"Коллекция {col_name}"),
+            (col_image_mobile, f"Коллекция {col_name} (моб.)"),
+        ):
+            if filename is None:
+                continue
+            names = usage.setdefault(filename, [])
+            if label not in names:
+                names.append(label)
 
     images_dir = _images_dir()
     files = [p for p in images_dir.iterdir() if p.is_file()] if images_dir.is_dir() else []
@@ -98,7 +103,9 @@ async def delete_image(filename: str, db: DbDep):
         .where(ProductImage.filename == filename)
     )
     used_by = list(dict.fromkeys(result.scalars().all()))
-    col_result = await db.execute(select(Collection.name).where(Collection.image == filename))
+    col_result = await db.execute(
+        select(Collection.name).where(or_(Collection.image == filename, Collection.image_mobile == filename))
+    )
     used_by += [f"Коллекция {n}" for n in col_result.scalars().all()]
     if used_by:
         raise HTTPException(

@@ -193,6 +193,7 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS slug VARCHAR(200)"))
         await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_products_slug ON products (slug)"))
         await conn.execute(text("ALTER TABLE collections ADD COLUMN IF NOT EXISTS image VARCHAR(255)"))
+        await conn.execute(text("ALTER TABLE collections ADD COLUMN IF NOT EXISTS image_mobile VARCHAR(255)"))
         await conn.execute(
             text("ALTER TABLE collections ADD COLUMN IF NOT EXISTS is_hero BOOLEAN NOT NULL DEFAULT FALSE")
         )

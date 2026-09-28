@@ -5,6 +5,10 @@ from backend.models import Collection, Product
 from backend.services.slugs import slugify
 
 
+# «Поле не передали» — отличаем от None, который означает «убрать картинку»
+UNSET = object()
+
+
 class CollectionNameTakenError(Exception):
     pass
 
@@ -58,6 +62,7 @@ class CollectionService:
         name: str,
         image: str | None,
         is_hero: bool | None = None,
+        image_mobile: str | None | object = UNSET,
     ) -> Collection | None:
         collection = await self.db.get(Collection, collection_id)
         if collection is None:
@@ -68,6 +73,8 @@ class CollectionService:
         collection.name = name
         collection.slug = await self._unique_slug(name, exclude_id=collection_id)
         collection.image = image
+        if image_mobile is not UNSET:
+            collection.image_mobile = image_mobile
 
         # is_hero=None означает «не менять»: так переименование и смена картинки
         # не сбрасывают выбор главной картинки главной страницы

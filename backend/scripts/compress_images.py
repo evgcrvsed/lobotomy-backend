@@ -77,6 +77,11 @@ async def main() -> None:
                 await session.execute(
                     update(Collection).where(Collection.image == path.name).values(image=new_name)
                 )
+                await session.execute(
+                    update(Collection)
+                    .where(Collection.image_mobile == path.name)
+                    .values(image_mobile=new_name)
+                )
 
             total_before += len(content)
             total_after += len(compressed)

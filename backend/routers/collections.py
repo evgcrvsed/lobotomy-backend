@@ -7,6 +7,7 @@ from backend.database import get_db
 from backend.schemas.collection import CollectionCreate, CollectionResponse, CollectionUpdate
 from backend.services.auth_service import get_current_admin
 from backend.services.collection_service import (
+    UNSET,
     CollectionNameTakenError,
     CollectionNotEmptyError,
     CollectionService,
@@ -36,7 +37,11 @@ async def create_collection(data: CollectionCreate, db: DbDep):
 async def update_collection(collection_id: int, data: CollectionUpdate, db: DbDep):
     try:
         collection = await CollectionService(db).update(
-            collection_id, data.name.strip(), data.image, data.is_hero
+            collection_id,
+            data.name.strip(),
+            data.image,
+            data.is_hero,
+            data.image_mobile if "image_mobile" in data.model_fields_set else UNSET,
         )
     except CollectionNameTakenError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
